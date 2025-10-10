@@ -1,0 +1,104 @@
+/**
+ * Main function: fetch invoices, link shipments, and write into "Invoices" sheet
+ * Uses the static API token
+ */
+function updateInvoicesAndShipmentsWithToken() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Invoices");
+  if (!sheet) throw new Error('Sheet "Invoices" not found');
+
+  // Clear old data but keep headers
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+  }
+
+  let url = "https://api.flexport.com/invoices";
+  let row = 2; // Start writing from row 2
+
+  while (url) {
+    const response = UrlFetchApp.fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + FLEXPORT_TOKEN,
+        "Flexport-Version": "3",
+        "Accept": "application/json"
+      },
+      muteHttpExceptions: true
+    });
+
+    const json = JSON.parse(response.getContentText());
+    const invoices = json.data.data;
+
+    invoices.forEach(invoice => {
+      const freightCost = invoice.total.amount;
+      const currency = invoice.total.currency_code;
+      const dueDate = invoice.due_date || "";
+
+      let origin = "";
+      let destination = "";
+      let priority = "";
+      let transportationMode = "";
+      let orderName = "";
+      let flexIdPlain = "";
+      let flexIdFormula = "";
+      const freightInvoiceFormula = invoice.name;
+
+      Logger.log("Invoice: " + invoice.name);
+
+      // Parse shipmentId from invoice.name (e.g., FLEX-3318419-1 → 3318419)
+      const match = invoice.name.match(/FLEX-(\d+)-/);
+      if (match) {
+        const shipmentId = match[1];
+        flexIdPlain = "FLEX-" + shipmentId;
+        const flexLink = "https://app.flexport.com/shipments/" + shipmentId;
+        flexIdFormula = `=HYPERLINK("${flexLink}","${flexIdPlain}")`;
+
+        try {
+          const shipmentResp = UrlFetchApp.fetch("https://api.flexport.com/shipments/" + shipmentId, {
+            method: "GET",
+            headers: {
+              "Authorization": "Bearer " + FLEXPORT_TOKEN,
+              "Flexport-Version": "3",
+              "Accept": "application/json"
+            },
+            muteHttpExceptions: true
+          });
+
+          const shipmentData = JSON.parse(shipmentResp.getContentText()).data;
+
+          origin = (shipmentData.shippers && shipmentData.shippers.length > 0)
+            ? shipmentData.shippers[0].name : "";
+          destination = (shipmentData.consignees && shipmentData.consignees.length > 0)
+            ? shipmentData.consignees[0].name : "";
+          priority = shipmentData.priority || "";
+          transportationMode = shipmentData.transportation_mode || "";
+          orderName = shipmentData.name || "";
+
+        } catch (err) {
+          Logger.log("Error fetching shipment details for invoice " + invoice.name + ": " + err);
+        }
+      }
+
+      // Write into sheet (columns A → K)
+      sheet.getRange(row, 1, 1, 11).setValues([[
+        origin,
+        destination,
+        priority,
+        transportationMode,
+        orderName,
+        flexIdPlain,
+        flexIdFormula,
+        freightInvoiceFormula,
+        freightCost,
+        currency,
+        dueDate
+      ]]);
+
+      row++;
+    });
+
+    // Pagination
+    url = json.data.next;
+  }
+
+  Logger.log("✅ Invoices updated successfully.");
+}

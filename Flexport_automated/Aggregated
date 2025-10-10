@@ -1,0 +1,145 @@
+/**
+ * 🔑 Static Flexport API Token
+ * Replace FLEXPORT_TOKEN with a valid token from Flexport.
+ * ⚠️ Remember: token usually expires after 1 hour.
+ */
+const FLEXPORT_TOKEN = '31e54a40661c0b5bc1371f855c2869b2';
+
+/**
+ * Get container number for an ocean shipment
+ */
+function getContainerNumber_(shipmentId) {
+  try {
+    const url = `https://api.flexport.com/ocean/shipment_containers?f.shipment.id=${shipmentId}`;
+    const response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+        'Flexport-Version': '3',
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+
+    const json = JSON.parse(response.getContentText());
+    if (json && json.data && json.data.data && json.data.data.length > 0) {
+      return json.data.data[0].container_number || "";
+    }
+  } catch (e) {
+    Logger.log("⚠️ Failed to get container for " + shipmentId + ": " + e);
+  }
+  return "";
+}
+
+/**
+ * Import all shipments into the active sheet
+ */
+function importFlexportShipments() {
+  let url = 'https://api.flexport.com/shipments';
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  // Clear previous data
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+  }
+
+  const headers = [
+    'Origin', 'Destination', 'Priority', 'Transportation Mode',
+    'Status', 'Order Name', 'ETA',
+    'Flex-ID', 'Flex-ID link', 'MAWB (Important for AIR)', 'Weight (in kg)', 'Invoice Number', 'CRD', 'Container Number'
+  ];
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(headers);
+  }
+
+  let allRows = [];
+
+  while (url) {
+    const response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+        'Flexport-Version': '3',
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+
+    const json = JSON.parse(response.getContentText());
+    if (!json || !json.data) {
+      throw new Error('❌ No shipment data: ' + response.getContentText());
+    }
+
+    const shipments = (json.data && Array.isArray(json.data.data)) ? json.data.data : [];
+
+    shipments.forEach(s => {
+      if (s.name && s.name.startsWith("Master ID:")) return;
+
+      const origin = (s.shippers && s.shippers.length > 0) ? s.shippers[0].name : '';
+      const destination = (s.consignees && s.consignees.length > 0) ? s.consignees[0].name : '';
+
+      let eta = '';
+      if (s.estimated_delivered_in_full_date) {
+        const dateObj = new Date(s.estimated_delivered_in_full_date);
+        eta = Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "MM/dd/yyyy");
+      }
+
+      const flexId = s.id ? "FLEX-" + s.id : '';
+      const flexIdLink = s.id
+        ? `=HYPERLINK("https://app.flexport.com/shipments/${s.id}","FLEX-${s.id}")`
+        : '';  
+
+      let mawb = '';
+      if (s.transportation_mode === 'ocean' && s.ocean_shipment) {
+        mawb = s.ocean_shipment.master_bill_number || '';
+      } else if (s.transportation_mode === 'air' && s.air_shipment) {
+        mawb = s.air_shipment.master_airway_bill_number || '';
+      }
+
+      let totalWeight = (s.calculated_weight && s.calculated_weight.value) ? s.calculated_weight.value : '';
+
+      let crd = '';
+      if (s.cargo_ready_date) {
+        const crdObj = new Date(s.cargo_ready_date);
+        crd = Utilities.formatDate(crdObj, Session.getScriptTimeZone(), "MM/dd/yyyy");
+      }
+
+      // 🆕 Fetch container number if ocean shipment
+      let containerNumber = "";
+      if (s.transportation_mode === 'ocean' && s.id) {
+        containerNumber = getContainerNumber_(s.id);
+      }
+
+      allRows.push([
+        origin,
+        destination,
+        s.priority || '',
+        s.transportation_mode || '',
+        s.status || '',
+        s.name || '',
+        eta,
+        flexId,
+        flexIdLink,
+        mawb,
+        totalWeight,
+        "", // Invoice will be filled by ARRAYFORMULA
+        crd,
+        containerNumber
+      ]);
+    });
+
+    url = (json.data && json.data.next) ? json.data.next : null;
+  }
+
+  if (allRows.length > 0) {
+    sheet.getRange(2, 1, allRows.length, headers.length).setValues(allRows);
+
+    // ✅ Apply ARRAYFORMULA for Invoice Number (L2)
+    const invoiceFormula =
+      `=ARRAYFORMULA(IF(H2:H="",,IFNA(VLOOKUP(H2:H,Invoices!F:H,3,FALSE),"")))`;
+    sheet.getRange(2, 12).setFormula(invoiceFormula);
+  }
+
+  Logger.log("✅ Shipments updated successfully.");
+}

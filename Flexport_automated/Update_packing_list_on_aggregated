@@ -1,0 +1,52 @@
+function updatePackingListFromLineLevel() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aggregatedSheet = ss.getSheetByName("Aggregated");
+  const lineLevelSheet = ss.getSheetByName("Line Level");
+
+  if (!aggregatedSheet || !lineLevelSheet) {
+    throw new Error("❌ Missing 'Aggregated' or 'Line Level' sheet.");
+  }
+
+  // 1️⃣ Get data
+  const aggData = aggregatedSheet.getDataRange().getValues();
+  const lineData = lineLevelSheet.getDataRange().getValues();
+  const lineFormulas = lineLevelSheet.getRange(1, 1, lineLevelSheet.getLastRow(), lineLevelSheet.getLastColumn()).getFormulas();
+
+  if (aggData.length <= 1 || lineData.length <= 1) {
+    Logger.log("No data to process.");
+    return;
+  }
+
+  // 2️⃣ Map Line Level: Column J → Column O formula
+  const lineMap = new Map();
+  for (let i = 1; i < lineData.length; i++) {
+    const key = lineData[i][9];       // Column J = index 9
+    const formula = lineFormulas[i][14]; // Column O = index 14
+    if (key && formula) {
+      lineMap.set(key, formula);
+    }
+  }
+
+  // 3️⃣ Update Aggregated column O (index 14)
+  const updates = [];
+  for (let i = 1; i < aggData.length; i++) {
+    const matchKey = aggData[i][7];     // Aggregated col H = index 7
+    const currentFormula = aggregatedSheet.getRange(i + 1, 15).getFormula(); // col O = 15
+    if (matchKey && lineMap.has(matchKey)) {
+      const newFormula = lineMap.get(matchKey);
+      if (!currentFormula || currentFormula !== newFormula) {
+        updates.push({
+          row: i + 1,
+          formula: newFormula
+        });
+      }
+    }
+  }
+
+  // 4️⃣ Apply updates
+  updates.forEach(u => {
+    aggregatedSheet.getRange(u.row + 1, 15).setFormula(u.formula);
+  });
+
+  Logger.log(`✅ Packing List updated for ${updates.length} rows.`);
+}

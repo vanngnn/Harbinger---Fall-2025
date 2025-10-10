@@ -1,0 +1,242 @@
+/**
+ * 📂 Map months to Google Drive folder IDs
+ */
+const MONTH_FOLDER_MAP = {
+  1: "1rkb0sBZwVVJ-ELrzXW6PdbMilLNjfCwf", // Jan
+  2: "1CrI00c_V9asg_9PjE7GFKnZaJ07_JXbk", // Feb
+  3: "1WKDZUoJst4VaAy2Fzu2FryltyPjdyT-a", // Mar
+  4: "1Uz-myNHSY4o-QePM4pcXcM0QihsEcp4C", // Apr
+  5: "13fcC78Xw7XW0KPOh1cZU2T7dXfx3M8_I", // May
+  6: "14UOvps4s_ntQ4dEWnOhgoB7K0DpKVE4P", // Jun
+  7: "1qarttZI_LmWVfY50_Zv6ikBah6uvMj5s", // Jul
+  8: "1dMSRxbo2-Ldmr0p1zBu3fSTK-jXcxzfa", // Aug
+  9: "14-3gG0pihxGl8aSKhgL_T4gSfklreXJM", // Sep
+  10: "1K-_-ExIzQxgZgU8P7UplH3jO56PDIy3D", // Oct
+  11: "1klgjikRLWcEYSx-3DWU_v_GYO8DnN5l3", // Nov
+  12: "1K1aYJO5ueYzdDtidvXaC5uUDzpfHVovC"  // Dec
+};
+
+/**
+ * 📥 Download and save a packing list document to Google Drive
+ * @param {string} fileUrl - Flexport file_link
+ * @param {string} fileName - Name for the file
+ * @param {string} eta - ETA date (formatted M/d/yyyy)
+ * @returns {GoogleAppsScript.Drive.File|null}
+ */
+function savePackingListToDrive(fileUrl, fileName, eta) {
+  if (!eta) {
+    Logger.log("⚠️ Skipping file because ETA is missing: " + fileName);
+    return null;
+  }
+
+  const month = new Date(eta).getMonth() + 1;
+  const folderId = MONTH_FOLDER_MAP[month];
+  if (!folderId) {
+    Logger.log("⚠️ No folder mapping found for month " + month);
+    return null;
+  }
+
+  try {
+    const folder = DriveApp.getFolderById(folderId);
+
+    // ✅ If file already exists, reuse it
+    const existingFiles = folder.getFilesByName(fileName);
+    if (existingFiles.hasNext()) {
+      const existingFile = existingFiles.next();
+      Logger.log("⏭️ Skipped download (already exists): " + fileName);
+      return existingFile;
+    }
+
+    // 🚀 Otherwise download new
+    const response = UrlFetchApp.fetch(fileUrl, {
+      headers: {
+        'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+        'Flexport-Version': '3',
+        'Accept': 'application/octet-stream'
+      }
+    });
+
+    const blob = response.getBlob().setName(fileName);
+    const file = folder.createFile(blob);
+
+    Logger.log("✅ Saved " + fileName + " to folder " + folder.getName());
+    return file;
+  } catch (e) {
+    Logger.log("❌ Failed to download/upload file: " + fileUrl + " → " + e);
+    return null;
+  }
+}
+
+/**
+ * 🚢 Import Flexport shipments into "Line Level" sheet
+ */
+function importFlexportLineItems() {
+  let url = 'https://api.flexport.com/shipments';
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Line Level");
+  if (!sheet) throw new Error('❌ "Line Level" tab not found!');
+
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+  }
+
+  const headers = [
+    'Origin', 'Destination', 'PO Number', 'Part Number',
+    'Base Part Number', 'QTY', 'Status', 'ETA',
+    'MAWB', 'Flex-ID', 'Flex-ID link', 'FLEX Parent (if exist)', 'CRD', 'Line Level Internal Reference', 'Packing List Links'
+  ];
+
+  if (sheet.getLastRow() === 0) sheet.appendRow(headers);
+
+  let internalRefCounter = 1;
+
+  while (url) {
+    const response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+        'Flexport-Version': '3',
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+
+    const json = JSON.parse(response.getContentText());
+    if (!json || !json.data) throw new Error('❌ No shipment data: ' + response.getContentText());
+
+    const shipments = Array.isArray(json.data.data) ? json.data.data : [];
+
+    shipments.forEach(s => {
+      if (!s.id) return;
+
+      // 🔎 Fetch shipment details
+      const detailUrl = `https://api.flexport.com/shipments/${s.id}`;
+      const detailResponse = UrlFetchApp.fetch(detailUrl, {
+        method: 'get',
+        headers: {
+          'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+          'Flexport-Version': '3',
+          'Accept': 'application/json'
+        },
+        muteHttpExceptions: true
+      });
+
+      const shipment = JSON.parse(detailResponse.getContentText()).data;
+      if (!shipment) return;
+
+      // 🚫 Skip parent shipments
+      if (shipment.child_shipments && shipment.child_shipments.length > 0) return;
+
+      const parentFlexId = shipment.parent_shipment?.id ? "FLEX-" + shipment.parent_shipment.id : '';
+      const origin = shipment.shippers?.[0]?.name || '';
+      const destination = shipment.consignees?.[0]?.name || '';
+      const status = shipment.status || '';
+
+      let eta = shipment.estimated_delivered_in_full_date || '';
+      if (eta) {
+        try { eta = Utilities.formatDate(new Date(eta), Session.getScriptTimeZone(), "M/d/yyyy"); }
+        catch (e) { Logger.log("Bad ETA date: " + eta); }
+      }
+
+      let crd = shipment.cargo_ready_date || '';
+      if (crd) {
+        try { crd = Utilities.formatDate(new Date(crd), Session.getScriptTimeZone(), "M/d/yyyy"); }
+        catch (e) { Logger.log("Bad CRD date: " + crd); }
+      }
+
+      let mawb = '';
+      if (shipment.transportation_mode === 'ocean' && shipment.ocean_shipment) {
+        mawb = shipment.ocean_shipment.master_bill_number || '';
+      } else if (shipment.transportation_mode === 'air' && shipment.air_shipment) {
+        mawb = shipment.air_shipment.master_airway_bill_number || '';
+      }
+
+      const flexId = "FLEX-" + shipment.id;
+      const flexIdLink = `=HYPERLINK("https://app.flexport.com/shipments/${shipment.id}","${flexId}")`;
+
+      // 📦 Fetch packing list links (handle pagination)
+      let packingListLinks = '';
+      try {
+        let docUrl = `https://api.flexport.com/documents?f.shipment.id=${shipment.id}`;
+        const links = [];
+
+        while (docUrl) {
+          const docResp = UrlFetchApp.fetch(docUrl, {
+            method: 'get',
+            headers: {
+              'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+              'Flexport-Version': '3',
+              'Accept': 'application/json'
+            },
+            muteHttpExceptions: true
+          });
+
+          const docsJson = JSON.parse(docResp.getContentText());
+          if (!docsJson?.data?.data) break;
+
+          // 🧩 Filter desired document types
+          const filteredDocs = docsJson.data.data.filter(d =>
+            d.document_type === 'packing_list' ||
+            d.document_type === 'commercial_invoice_packing_list'
+          );
+
+          // 💾 Save each matching document
+          for (const d of filteredDocs) {
+            const savedFile = savePackingListToDrive(d.file_link, d.file_name, eta);
+            if (savedFile) {
+              const driveUrl = `https://drive.google.com/file/d/${savedFile.getId()}/view`;
+              links.push({ url: driveUrl, name: d.file_name });
+            }
+            Utilities.sleep(500); // throttle for API quota
+          }
+
+          // Move to next page (if exists)
+          docUrl = docsJson.data.next || null;
+        }
+
+        // Format packing list links for the sheet
+        if (links.length === 1) {
+          packingListLinks = `=HYPERLINK("${links[0].url}","${links[0].name}")`;
+        } else if (links.length > 1) {
+          packingListLinks = links.map(l => l.url).join('\n');
+        }
+      } catch (err) {
+        Logger.log("⚠️ Failed to fetch documents for shipment " + shipment.id + ": " + err);
+      }
+
+
+      if (shipment.items?.length > 0) {
+        const startRow = sheet.getLastRow() + 1;
+        const rows = shipment.items.map(item => [
+          origin,
+          destination,
+          item.purchase_order_number || '',
+          item.product?.sku || '',
+          '', // Base Part Number
+          item.total_units || '',
+          status,
+          eta,
+          mawb,
+          flexId,
+          flexIdLink,
+          parentFlexId,
+          crd,
+          'A' + internalRefCounter++,
+          packingListLinks
+        ]);
+
+        sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
+
+        // Auto-fill Base Part Number
+        rows.forEach((_, idx) => {
+          const rowIndex = startRow + idx;
+          sheet.getRange(rowIndex, 5).setFormula(`=LEFT(D${rowIndex},10)`);
+        });
+      }
+    });
+
+    url = json.data.next || null;
+  }
+
+  Logger.log("✅ Shipment line items imported successfully (leaf shipments only, packing lists embedded).");
+}

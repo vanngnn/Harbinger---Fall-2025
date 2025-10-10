@@ -1,0 +1,200 @@
+/**
+ * 🔐 Flexport API Token
+ */
+// const FLEXPORT_TOKEN = 'YOUR_FLEXPORT_TOKEN_HERE';
+
+/**
+ * 🚚 Get container number for shipment
+ */
+function getContainerNumber_(shipmentId) {
+  try {
+    const url = `https://api.flexport.com/ocean/shipment_containers?f.shipment.id=${shipmentId}`;
+    const response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+        'Flexport-Version': '3',
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+
+    const json = JSON.parse(response.getContentText());
+    if (json?.data?.data?.length > 0) {
+      return json.data.data[0].container_number || "";
+    }
+  } catch (e) {
+    Logger.log("⚠️ Failed to get container for " + shipmentId + ": " + e);
+  }
+  return "";
+}
+
+/**
+ * 🚢 Import Flexport shipments into "Shipments to Crane"
+ */
+function importShipmentsToCrane() {
+  Logger.log("Script is running");
+  let url = 'https://api.flexport.com/shipments';
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Shipments to Crane");
+  if (!sheet) throw new Error('❌ "Shipments to Crane" tab not found!');
+
+  // 🧹 Clear old data (keep headers)
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+  }
+
+  const headers = [
+    'Origin', 'Destination', 'PO', 'Part Number', 'Base Part Number', 'QTY',
+    'Status', 'ETA', 'MAWB (Important for AIR)', 'FLEX ID', 'FLEX ID Link',
+    'FLEX Parent (if exist)', 'CRD', 'Line Level Internal Reference',
+    'Packing Lists', 'Container Number'
+  ];
+  if (sheet.getLastRow() === 0) sheet.appendRow(headers);
+
+  let internalRefCounter = 1;
+
+  while (url) {
+    const response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: {
+        'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+        'Flexport-Version': '3',
+        'Accept': 'application/json'
+      },
+      muteHttpExceptions: true
+    });
+
+    const json = JSON.parse(response.getContentText());
+    if (!json || !json.data) throw new Error('❌ No shipment data: ' + response.getContentText());
+
+    const shipments = Array.isArray(json.data.data) ? json.data.data : [];
+
+    shipments.forEach(s => {
+      if (!s.id) return;
+
+      // 📦 Fetch shipment details
+      const detailUrl = `https://api.flexport.com/shipments/${s.id}`;
+      const detailResponse = UrlFetchApp.fetch(detailUrl, {
+        method: 'get',
+        headers: {
+          'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+          'Flexport-Version': '3',
+          'Accept': 'application/json'
+        },
+        muteHttpExceptions: true
+      });
+
+      const shipmentDetail = JSON.parse(detailResponse.getContentText()).data;
+      if (!shipmentDetail) return;
+
+      // 🚫 Skip if it has child shipments
+      if (shipmentDetail.child_shipments && shipmentDetail.child_shipments.length > 0) return;
+
+      const shipmentId = shipmentDetail.id;
+      const parentFlexId = shipmentDetail.parent_shipment?.id ? "FLEX-" + shipmentDetail.parent_shipment.id : '';
+      const flexId = "FLEX-" + shipmentId;
+      const flexIdLink = `=HYPERLINK("https://app.flexport.com/shipments/${shipmentId}","${flexId}")`;
+      const status = shipmentDetail.status || '';
+
+      // 🗓️ Dates
+      let eta = shipmentDetail.estimated_delivered_in_full_date || '';
+      if (eta) {
+        try { eta = Utilities.formatDate(new Date(eta), Session.getScriptTimeZone(), "M/d/yyyy"); } catch (e) {}
+      }
+
+      let crd = shipmentDetail.cargo_ready_date || '';
+      if (crd) {
+        try { crd = Utilities.formatDate(new Date(crd), Session.getScriptTimeZone(), "M/d/yyyy"); } catch (e) {}
+      }
+
+      // 🛫 MAWB (for air)
+      let mawb = '';
+      if (shipmentDetail.air_waybills?.length > 0) {
+        mawb = shipmentDetail.air_waybills[0]?.air_waybill_number || '';
+      }
+
+      // 🚛 Fetch origin & destination via shipment legs
+      let originName = '';
+      let destinationAddress = '';
+      try {
+        const legsUrl = `https://api.flexport.com/shipment_legs?f.shipment.id=${shipmentId}`;
+        const legsResponse = UrlFetchApp.fetch(legsUrl, {
+          method: 'get',
+          headers: {
+            'Authorization': 'Bearer ' + FLEXPORT_TOKEN,
+            'Flexport-Version': '3',
+            'Accept': 'application/json'
+          },
+          muteHttpExceptions: true
+        });
+
+        const legsJson = JSON.parse(legsResponse.getContentText());
+        const legs = legsJson?.data?.data;
+
+        if (Array.isArray(legs) && legs.length > 0) {
+          // ✅ Find correct destination by tag (destination_address OR deconsolidation)
+          let originLeg = legs.find(l => l.origin?.place?.name);
+          let destLeg = legs.find(l =>
+            Array.isArray(l.destination?.tags) &&
+            (l.destination.tags.includes("destination_address") ||
+            l.destination.tags.includes("deconsolidation"))
+          );
+
+          // fallback to last leg if not found
+          if (!destLeg) destLeg = legs[legs.length - 1];
+
+          originName = originLeg?.origin?.place?.name || '';
+          destinationAddress = destLeg?.destination?.place?.address?.street_address || '';
+        }
+      } catch (e) {
+        Logger.log("⚠️ Failed to fetch shipment legs for " + shipmentId + ": " + e);
+      }
+
+      // 🚫 Skip shipments that are NOT going to the desired addresses
+      const destLower = (destinationAddress || '').toLowerCase();
+      if (destLower !== '2650 commerce way' && destLower !== '8721 merrill ave') {
+        Logger.log(`🚫 Skipping shipment ${shipmentId} — destination not matched (${destinationAddress})`);
+        return; // skip this shipment entirely
+      }
+
+      // 🚢 Container number
+      const containerNumber = getContainerNumber_(shipmentId);
+
+      // 🧾 Items
+      if (shipmentDetail.items?.length > 0) {
+        const startRow = sheet.getLastRow() + 1;
+        const rows = shipmentDetail.items.map(item => [
+          originName,
+          destinationAddress,
+          item.purchase_order_number || '',
+          item.product?.sku || '',
+          '', // base part number
+          item.total_units || '',
+          status,
+          eta,
+          mawb,
+          flexId,
+          flexIdLink,
+          parentFlexId,
+          crd,
+          `CR-A-${internalRefCounter++}`,
+          '', // Packing Lists (no uploads)
+          containerNumber
+        ]);
+
+        sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
+
+        // 🧮 Fill base part number formula
+        rows.forEach((_, idx) => {
+          const rowIndex = startRow + idx;
+          sheet.getRange(rowIndex, 5).setFormula(`=LEFT(D${rowIndex},10)`);
+        });
+      }
+    });
+
+    url = json.data.next || null;
+  }
+
+  Logger.log("✅ Shipments imported successfully to 'Shipments to Crane'.");
+}
