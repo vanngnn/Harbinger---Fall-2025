@@ -11,6 +11,7 @@ const DIRECTOR2_EMAIL = "van.nguyen2@harbingermotors.com";
 const BASE_URL = "https://script.google.com/a/macros/harbingermotors.com/s/AKfycbwkydQR1No46YCUhFe2b3mDDO_TJ60d_srMeWYnP7ThxYG1iRHCB7c_wvm8ty0lp-HRXw/exec";
 
 
+
 // ======================
 // 📨 1. ON FORM SUBMIT
 // ======================
@@ -71,13 +72,13 @@ function onFormSubmit(e) {
     </p>
   `;
 
-  MailApp.sendEmail({
-    to: MANAGER_EMAIL,
-    subject: `New Airfreight Request ${id} - Cost Input Needed`,
-    htmlBody: htmlBody
-  });
+  GmailApp.sendEmail(
+    MANAGER_EMAIL,
+    `New Airfreight Request ${id} - Cost Input Needed`,
+    "",
+    { htmlBody: htmlBody }
+  );
 }
-
 
 
 
@@ -102,6 +103,8 @@ function onEdit(e) {
     sendApprovalEmail(row, id, cost, 1);
   }
 }
+
+
 
 // ======================
 // ✉️ 3. SEND APPROVAL EMAILS
@@ -186,12 +189,14 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
     </p>
   `;
 
-  MailApp.sendEmail({
-    to: toEmail,
-    subject: `Airfreight Request ${id} – Approval Needed (${next})`,
-    htmlBody: htmlBody
-  });
+  GmailApp.sendEmail(
+    toEmail,
+    `Airfreight Request ${id} – Approval Needed (${next})`,
+    "",
+    { htmlBody: htmlBody }
+  );
 }
+
 
 
 // ======================
@@ -235,11 +240,34 @@ function doGet(e) {
         sendApprovalEmail(rowIndex, id, cost, 2);
 
         return HtmlService.createHtmlOutput(`
-          <p style="font-family:Arial; font-size:14px;">
-            ✅ Director 1 has approved <b>${id}</b>.<br>
-            The request has been forwarded to Director 2 for final approval.<br><br>
-            You can review this request in the ${sheetLinkHTML}.
-          </p>
+          <div style="
+            font-family:Arial, sans-serif; 
+            max-width:600px; 
+            margin:30px auto; 
+            padding:25px; 
+            border:1px solid #ccc; 
+            border-radius:10px; 
+            background-color:#f9f9f9;
+            text-align:center;
+          ">
+            <h2 style="color:#2e7d32; margin-bottom:10px;">✅ Approval Successful</h2>
+            <p style="font-size:15px; color:#333;">
+              <b>Director 1</b> has approved <b>${id}</b>.
+            </p>
+            <p style="font-size:14px; color:#555;">
+              The request has been forwarded to <b>Director 2</b> for final approval.
+            </p>
+
+            <hr style="margin:20px 0; border:none; border-top:1px solid #ddd;">
+
+            <p style="font-size:14px; color:#333;">
+              You can review this request in the ${sheetLinkHTML}.
+            </p>
+
+            <p style="font-size:12px; color:#777; margin-top:15px;">
+              Timestamp: ${now}
+            </p>
+          </div>
         `);
       }
 
@@ -249,18 +277,36 @@ function doGet(e) {
         sheet.getRange(rowIndex, 13).setValue("D2 Approved - Complete");
 
         sendCompletionEmail(rowIndex);
+
         return HtmlService.createHtmlOutput(`
-          <p style="font-family:Arial; font-size:14px;">
-            ✅ Director 2 has approved <b>${id}</b>.<br>
-            The airfreight approval process is now complete.<br><br>
-            You can review this request in the ${sheetLinkHTML}.
-          </p>
+          <div style="font-family:Arial, sans-serif; max-width:600px; margin:40px auto; border:1px solid #dcdcdc; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1); padding:25px; background-color:#f9fffa;">
+            <div style="text-align:center; margin-bottom:20px;">
+              <div style="font-size:40px;">✅</div>
+              <h2 style="color:#2e7d32; margin:10px 0 0;">Approval Complete</h2>
+            </div>
+            <p style="font-size:14px; color:#333; line-height:1.6;">
+              Director 2 has successfully <b>approved</b> request <b>${id}</b>.
+              <br><br>
+              The airfreight approval process is now <b>fully complete</b>.
+            </p>
+            <div style="text-align:center; margin:25px 0;">
+              <a href="${logLink}" 
+                style="background-color:#2e7d32; color:white; text-decoration:none; padding:10px 25px; border-radius:6px; font-size:13px; font-weight:bold; letter-spacing:0.3px;">
+                🔗 View Airfreight Log
+              </a>
+            </div>
+            <hr style="border:none; border-top:1px solid #e0e0e0; margin:20px 0;">
+            <p style="font-size:12px; color:#555; text-align:center;">
+              Timestamp: ${now}<br>
+              Request ID: <b>${id}</b>
+            </p>
+          </div>
         `);
       }
-
       return HtmlService.createHtmlOutput(`⚠️ Unknown approval level: ${level}`);
     }
 
+    // ❌ REJECT
     // ❌ REJECT
     if (action === "reject") {
       const reason = level === "1" ? "Director 1" : "Director 2";
@@ -273,22 +319,69 @@ function doGet(e) {
 
       const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
 
-      MailApp.sendEmail({
-        to: `${MANAGER_EMAIL}, ${requesterEmail}`,
-        subject: `Airfreight Request ${id} - Rejected by ${reason}`,
-        htmlBody: `
-          <p style="font-family:Arial; font-size:14px;">
-            Airfreight Request <b>${id}</b> has been <b>REJECTED</b> by ${reason}.<br><br>
-            Please review the request details in the ${sheetLinkHTML} and take appropriate action.
-          </p>
-        `
-      });
+      // 📧 Send rejection email
+      GmailApp.sendEmail(
+        `${MANAGER_EMAIL}, ${requesterEmail}`,
+        `Airfreight Request ${id} - Rejected by ${reason}`,
+        "",
+        {
+          htmlBody: `
+            <div style="
+              font-family:Arial, sans-serif; 
+              max-width:600px; 
+              margin:30px auto; 
+              padding:25px; 
+              border:1px solid #e0b4b4; 
+              border-radius:10px; 
+              background-color:#fff5f5;
+            ">
+              <h2 style="color:#c0392b; text-align:center;">❌ Request Rejected</h2>
 
+              <p style="font-size:15px; color:#333;">
+                Airfreight Request <b>${id}</b> has been <b>REJECTED</b> by ${reason}.
+              </p>
+
+              <p style="font-size:14px; color:#555;">
+                Please review the details in the ${sheetLinkHTML} and take appropriate action.
+              </p>
+
+              <hr style="margin:20px 0; border:none; border-top:1px solid #ddd;">
+
+              <p style="font-size:12px; color:#777;">
+                Timestamp: ${now}
+              </p>
+            </div>
+          `
+        }
+      );
+
+      // 🧾 Display a styled rejection confirmation page
       return HtmlService.createHtmlOutput(`
-        <p style="font-family:Arial; font-size:14px;">
-          ❌ ${reason} has rejected <b>${id}</b>.<br>
-          You can review this request in the ${sheetLinkHTML}.
-        </p>
+        <div style="
+          font-family:Arial, sans-serif; 
+          max-width:600px; 
+          margin:30px auto; 
+          padding:25px; 
+          border:1px solid #e0b4b4; 
+          border-radius:10px; 
+          background-color:#fff5f5;
+          text-align:center;
+        ">
+          <h2 style="color:#c0392b; margin-bottom:10px;">❌ Rejection Recorded</h2>
+          <p style="font-size:15px; color:#333;">
+            <b>${reason}</b> has rejected request <b>${id}</b>.
+          </p>
+
+          <p style="font-size:14px; color:#555;">
+            You can review this request in the ${sheetLinkHTML}.
+          </p>
+
+          <hr style="margin:20px 0; border:none; border-top:1px solid #ddd;">
+
+          <p style="font-size:12px; color:#777;">
+            Timestamp: ${now}
+          </p>
+        </div>
       `);
     }
 
@@ -312,13 +405,16 @@ function sendCompletionEmail(rowIndex) {
 
   Logger.log(`📩 Sending completion email for ${id}`);
 
-  MailApp.sendEmail({
-    to: `${MANAGER_EMAIL}, ${requesterEmail}`,
-    subject: `Airfreight Request ${id} - Fully Approved`,
-    htmlBody: `
-      Airfreight Request <b>${id}</b> has been approved by both Directors.<br><br>
-      This request is now marked as <b>D2 Approved – Complete</b>.<br><br>
-      You may proceed with shipping arrangements.
-    `
-  });
+  GmailApp.sendEmail(
+    `${MANAGER_EMAIL}, ${requesterEmail}`,
+    `Airfreight Request ${id} - Fully Approved`,
+    "",
+    {
+      htmlBody: `
+        Airfreight Request <b>${id}</b> has been approved by both Directors.<br><br>
+        This request is now marked as <b>D2 Approved – Complete</b>.<br><br>
+        You may proceed with shipping arrangements.
+      `
+    }
+  );
 }
