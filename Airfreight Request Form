@@ -1,0 +1,228 @@
+// ======================
+// 🧠 CONFIGURATION
+// ======================
+const SPREADSHEET_ID = "1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI"; // Spreadsheet ID
+const SHEET_NAME = "Airfreight Log"; // workflow tab
+const MANAGER_EMAIL = "van.nguyen2@harbingermotors.com";
+const DIRECTOR1_EMAIL = "van.nguyen2@harbingermotors.com";
+const DIRECTOR2_EMAIL = "van.nguyen2@harbingermotors.com";
+
+// ✅ Latest deployed Web App URL (NO /u/4/)
+const BASE_URL = "https://script.google.com/a/macros/harbingermotors.com/s/AKfycbwkydQR1No46YCUhFe2b3mDDO_TJ60d_srMeWYnP7ThxYG1iRHCB7c_wvm8ty0lp-HRXw/exec";
+
+
+// ======================
+// 📨 1. ON FORM SUBMIT
+// ======================
+function onFormSubmit(e) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
+  const responses = e.values; // [Timestamp, Email, Supplier, Part#, Qty, NeedBy, Rational]
+
+  // === Generate new sequential REQ ID ===
+  const idValues = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
+  let maxNum = 0;
+  idValues.forEach(v => {
+    const match = String(v).match(/^REQ-(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1]);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  const id = "REQ-" + (maxNum + 1);
+
+  const requesterEmail = responses[1];
+  const supplier = responses[2];
+  const partNumber = responses[3];
+  const qty = responses[4];
+  const needBy = responses[5];
+  const rational = responses[6];
+
+  const row = [
+    id,
+    requesterEmail,
+    supplier,
+    partNumber,
+    qty,
+    needBy,
+    rational,
+    "", "", "", "", "", "New Request - Awaiting Cost"
+  ];
+  sheet.appendRow(row);
+
+  MailApp.sendEmail({
+    to: MANAGER_EMAIL,
+    subject: `New Airfreight Request ${id} - Cost Input Needed`,
+    htmlBody: `
+      A new airfreight request was submitted by <b>${requesterEmail}</b>.<br><br>
+      Supplier: <b>${supplier}</b><br>
+      Part Number: <b>${partNumber}</b><br>
+      Quantity: <b>${qty}</b><br>
+      Need By: <b>${needBy}</b><br>
+      Reason: <b>${rational}</b><br><br>
+      Please open the <b>${SHEET_NAME}</b> sheet and enter the Airfreight Cost for request ID <b>${id}</b>.
+    `
+  });
+}
+
+
+
+// ======================
+// 🧮 2. ON EDIT (Manager adds cost)
+// ======================
+function onEdit(e) {
+  const sheet = e.source.getSheetByName(SHEET_NAME);
+  if (!sheet || sheet.getName() !== SHEET_NAME) return;
+
+  const col = e.range.getColumn();
+  const row = e.range.getRow();
+
+  // Airfreight Cost = column H (8)
+  if (col !== 8) return;
+
+  const id = sheet.getRange(row, 1).getValue();
+  const cost = e.range.getValue();
+
+  if (cost && cost !== "") {
+    sheet.getRange(row, 13).setValue("Cost Added - Awaiting D1 Approval");
+    sendApprovalEmail(row, id, cost, 1);
+  }
+}
+
+
+// ======================
+// ✉️ 3. SEND APPROVAL EMAILS
+// ======================
+function sendApprovalEmail(row, id, cost, approverLevel) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
+
+  const approveUrl = `${BASE_URL}?action=approve&level=${approverLevel}&id=${id}`;
+  const rejectUrl = `${BASE_URL}?action=reject&level=${approverLevel}&id=${id}`;
+
+  const supplier = sheet.getRange(row, 3).getValue();
+  const partNumber = sheet.getRange(row, 4).getValue();
+
+  const toEmail = approverLevel === 1 ? DIRECTOR1_EMAIL : DIRECTOR2_EMAIL;
+  const next = approverLevel === 1 ? "Director 1" : "Director 2";
+
+  Logger.log(`📧 Sending approval email for ${id} to ${toEmail} (Level ${approverLevel})`);
+
+  MailApp.sendEmail({
+    to: toEmail,
+    subject: `Airfreight Request ${id} - Approval Needed (${next})`,
+    htmlBody: `
+      Please review airfreight request <b>${id}</b>.<br><br>
+      Supplier: <b>${supplier}</b><br>
+      Part Number: <b>${partNumber}</b><br>
+      Cost: <b>$${cost}</b><br><br>
+      <a href="${approveUrl}">✅ Approve</a> | <a href="${rejectUrl}">❌ Reject</a><br><br>
+      <small>Request ID: ${id} | Level: ${approverLevel}</small>
+    `
+  });
+}
+
+
+// ======================
+// 🌐 4. HANDLE APPROVAL LINKS
+// ======================
+function doGet(e) {
+  try {
+    if (!e) return HtmlService.createHtmlOutput("❌ No parameters received.");
+
+    Logger.log("Incoming parameters: " + JSON.stringify(e.parameter));
+
+    const action = e.parameter.action || "";
+    const id = e.parameter.id || "";
+    const level = String(e.parameter.level || "").trim();
+
+    if (!id || !action || !level)
+      return HtmlService.createHtmlOutput(`⚠️ Missing parameters: ${JSON.stringify(e.parameter)}`);
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) throw new Error("Sheet not found.");
+
+    const data = sheet.getDataRange().getValues();
+    const rowIndex = data.findIndex(r => r[0] === id) + 1;
+    if (rowIndex <= 0) throw new Error("Request not found: " + id);
+
+    const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+    Logger.log(`🔹 Action=${action}, Level=${level}, Row=${rowIndex}, ID=${id}`);
+
+    // ✅ APPROVE
+    if (action === "approve") {
+      if (level === "1") {
+        sheet.getRange(rowIndex, 9).setValue("Approved");
+        sheet.getRange(rowIndex, 10).setValue(now);
+        sheet.getRange(rowIndex, 13).setValue("D1 Approved - Awaiting D2 Approval");
+
+        const cost = sheet.getRange(rowIndex, 8).getValue();
+        sendApprovalEmail(rowIndex, id, cost, 2);
+
+        return HtmlService.createHtmlOutput(`✅ Director 1 approved ${id}. Forwarded to Director 2.`);
+      }
+
+      if (level === "2") {
+        sheet.getRange(rowIndex, 11).setValue("Approved");
+        sheet.getRange(rowIndex, 12).setValue(now);
+        sheet.getRange(rowIndex, 13).setValue("D2 Approved - Complete");
+
+        sendCompletionEmail(rowIndex);
+        return HtmlService.createHtmlOutput(`✅ Director 2 approved ${id}. Process complete.`);
+      }
+
+      return HtmlService.createHtmlOutput(`⚠️ Unknown approval level: ${level}`);
+    }
+
+    // ❌ REJECT
+    if (action === "reject") {
+      const reason = level === "1" ? "Director 1" : "Director 2";
+      const approvalCol = level === "1" ? 9 : 11;
+      const timeCol = level === "1" ? 10 : 12;
+
+      sheet.getRange(rowIndex, approvalCol).setValue("Rejected");
+      sheet.getRange(rowIndex, timeCol).setValue(now);
+      sheet.getRange(rowIndex, 13).setValue(`Rejected by ${reason}`);
+
+      const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
+
+      MailApp.sendEmail({
+        to: `${MANAGER_EMAIL}, ${requesterEmail}`,
+        subject: `Airfreight Request ${id} - Rejected by ${reason}`,
+        htmlBody: `
+          Airfreight Request <b>${id}</b> has been <b>REJECTED</b> by ${reason}.<br><br>
+          Please review the request details in the <b>${SHEET_NAME}</b> sheet and take appropriate action.
+        `
+      });
+
+      return HtmlService.createHtmlOutput(`❌ ${reason} rejection recorded for ${id}.`);
+    }
+
+    return HtmlService.createHtmlOutput("⚠️ Unknown action.");
+
+  } catch (err) {
+    Logger.log("🚨 doGet ERROR: " + err.message);
+    return HtmlService.createHtmlOutput("🚨 Script error: " + err.message);
+  }
+}
+
+
+// ======================
+// 📬 5. FINAL COMPLETION EMAIL
+// ======================
+function sendCompletionEmail(rowIndex) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
+  const id = sheet.getRange(rowIndex, 1).getValue();
+  const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
+
+  Logger.log(`📩 Sending completion email for ${id}`);
+
+  MailApp.sendEmail({
+    to: `${MANAGER_EMAIL}, ${requesterEmail}`,
+    subject: `Airfreight Request ${id} - Fully Approved`,
+    htmlBody: `
+      Airfreight Request <b>${id}</b> has been approved by both Directors.<br><br>
+      This request is now marked as <b>D2 Approved – Complete</b>.<br><br>
+      You may proceed with shipping arrangements.
+    `
+  });
+}
