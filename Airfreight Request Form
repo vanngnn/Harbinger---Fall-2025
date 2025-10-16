@@ -2,8 +2,13 @@
 // 🧠 CONFIGURATION
 // ======================
 const SPREADSHEET_ID = "1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI"; // Spreadsheet ID
-const SHEET_NAME = "Airfreight Log"; // workflow tab
+const SHEET_NAME = "Expedited Freight Log"; // workflow tab
+
+//Main contacts:
 const MANAGER_EMAIL = "van.nguyen2@harbingermotors.com";
+const PLANNER_EMAIL = "van.nguyen2@harbingermotors.com";
+
+//Director approval levels:
 const DIRECTOR1_EMAIL = "van.nguyen2@harbingermotors.com";
 const DIRECTOR2_EMAIL = "van.nguyen2@harbingermotors.com";
 
@@ -33,8 +38,8 @@ function onFormSubmit(e) {
 
   const requesterEmail = responses[1];
   const supplier = responses[2];
-  const partNumber = responses[3];
-  const qty = responses[4];
+  const listPartNumber = responses[3];
+  const transportationMode = responses[4];
   const needBy = responses[5];
   const rational = responses[6];
 
@@ -42,11 +47,11 @@ function onFormSubmit(e) {
     id,
     requesterEmail,
     supplier,
-    partNumber,
-    qty,
+    listPartNumber,//partNumber
+    transportationMode,//qty
     needBy,
     rational,
-    "", "", "", "", "", "New Request - Awaiting Cost"
+    "", "", "", "", "", "","", "New Request - Awaiting Cost"
   ];
   sheet.appendRow(row);
   // 🟨 Highlight Airfreight Cost cell (column H)
@@ -66,8 +71,8 @@ function onFormSubmit(e) {
       </tr>
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Request ID</b></td><td style="padding:8px;">${id}</td></tr>
       <tr><td style="padding:8px;"><b>Supplier</b></td><td style="padding:8px;">${supplier}</td></tr>
-      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Part Number</b></td><td style="padding:8px;">${partNumber}</td></tr>
-      <tr><td style="padding:8px;"><b>Quantity</b></td><td style="padding:8px;">${qty}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>List of PO, Part Number, Qty</b></td><td style="padding:8px;">${listPartNumber}</td></tr>
+      <tr><td style="padding:8px;"><b>Transportation Mode</b></td><td style="padding:8px;">${transportationMode}</td></tr>
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Need By</b></td><td style="padding:8px;">${needBy}</td></tr>
       <tr><td style="padding:8px;"><b>Reason</b></td><td style="padding:8px;">${rational}</td></tr>
     </table>
@@ -107,7 +112,7 @@ function onEdit(e) {
     // 🟩 Remove highlight once cost is entered
     e.range.setBackground(null);
 
-    sheet.getRange(row, 13).setValue("Cost Added - Awaiting D1 Approval");
+    sheet.getRange(row, 15).setValue("Cost Added - Awaiting Planner Approval");
     sendApprovalEmail(row, id, cost, 1);
   }
 }
@@ -121,11 +126,26 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   const approveUrl = `${BASE_URL}?action=approve&level=${approverLevel}&id=${id}`;
   const rejectUrl  = `${BASE_URL}?action=reject&level=${approverLevel}&id=${id}`;
 
+  const requesterEmail = sheet.getRange(row,2).getValue();
   const supplier   = sheet.getRange(row, 3).getValue();
-  const partNumber = sheet.getRange(row, 4).getValue();
+  const listPartNumber = sheet.getRange(row, 4).getValue();
+  const transportationMode = sheet.getRange(row,5).getValue();
+  const needBy = sheet.getRange(row,6).getValue();
+  const rational = sheet.getRange(row,7).getValue();
 
-  const toEmail = approverLevel === 1 ? DIRECTOR1_EMAIL : DIRECTOR2_EMAIL;
-  const next    = approverLevel === 1 ? "Director 1" : "Director 2";
+  let toEmail = "";
+  let next = "";
+
+  if (approverLevel === 1) {
+    toEmail = PLANNER_EMAIL;
+    next = "Planner";
+  } else if (approverLevel === 2) {
+    toEmail = DIRECTOR1_EMAIL;
+    next = "Director 1";
+  } else if (approverLevel === 3) {
+    toEmail = DIRECTOR2_EMAIL;
+    next = "Director 2";
+  }
 
   // Format cost nicely (e.g., 2,000)
   const formattedCost = Number(cost).toLocaleString("en-US", {
@@ -134,11 +154,11 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   });
 
   const logLink = "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
-  const sheetLinkHTML = `<a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Airfreight Log</b></a>`;
+  const sheetLinkHTML = `<a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Expedited Shipments Log</b></a>`;
 
   Logger.log(`📧 Sending approval email for ${id} to ${toEmail} (Level ${approverLevel})`);
 
-  // === Styled Email Body (same for D1 & D2) ===
+  // === Styled Email Body (same for Planner, D1 & D2) ===
   const htmlBody = `
     <p style="font-family:Arial; font-size:14px;">Dear ${next},</p>
     <p style="font-family:Arial; font-size:14px;">
@@ -154,18 +174,42 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
         <td style="padding:8px;"><b>Request ID</b></td>
         <td style="padding:8px;">${id}</td>
       </tr>
+
       <tr>
+        <td style="padding:8px;"><b>Requester</b></td>
+        <td style="padding:8px;">${requesterEmail}</td>
+      </tr>
+
+      <tr style="background-color:#f9f9f9;">
         <td style="padding:8px;"><b>Supplier</b></td>
         <td style="padding:8px;">${supplier}</td>
       </tr>
-      <tr style="background-color:#f9f9f9;">
-        <td style="padding:8px;"><b>Part Number</b></td>
-        <td style="padding:8px;">${partNumber}</td>
-      </tr>
+
       <tr>
-        <td style="padding:8px;"><b>Cost</b></td>
-        <td style="padding:8px;">$${formattedCost}</td>
+        <td style="padding:8px;"><b>List of PO, Part Number, QTY</b></td>
+        <td style="padding:8px;">${listPartNumber}</td>
       </tr>
+
+      <tr style="background-color:#f9f9f9;">
+        <td style="padding:8px;"><b>Transportation Mode</b></td>
+        <td style="padding:8px;">${transportationMode}</td>
+      </tr>
+
+      <tr>
+        <td style="padding:8px;"><b>Need By</b></td>
+        <td style="padding:8px;">${needBy}</td>
+      </tr>
+
+      <tr style="background-color:#f9f9f9;">
+        <td style="padding:8px;"><b>Reasoning</b></td>
+        <td style="padding:8px;">${rational}</td>
+      </tr>
+
+      <tr>
+        <td style="padding:8px;"><b>Freight Cost</b></td>
+        <td style="padding:8px;">$${cost}</td>
+      </tr>
+
     </table>
 
     <br>
@@ -203,8 +247,6 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   );
 }
 
-
-
 // ======================
 // 🌐 4. HANDLE APPROVAL LINKS
 // ======================
@@ -233,172 +275,159 @@ function doGet(e) {
     Logger.log(`🔹 Action=${action}, Level=${level}, Row=${rowIndex}, ID=${id}`);
 
     const logLink = "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
-    const sheetLinkHTML = `<a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Airfreight Log</b></a>`;
+    const sheetLinkHTML = `<a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Expedited Shipments Log</b></a>`;
 
     // ✅ APPROVE
     if (action === "approve") {
+      const cost = sheet.getRange(rowIndex, 8).getValue();
+
+      // === LEVEL 1 (Planner) ===
       if (level === "1") {
         sheet.getRange(rowIndex, 9).setValue("Approved");
         sheet.getRange(rowIndex, 10).setValue(now);
-        sheet.getRange(rowIndex, 13).setValue("D1 Approved - Awaiting D2 Approval");
 
-        const cost = sheet.getRange(rowIndex, 8).getValue();
-        sendApprovalEmail(rowIndex, id, cost, 2);
+        // Threshold-based routing
+        if (cost > 10000) {
+          sheet.getRange(rowIndex, 15).setValue("Planner Approved – Awaiting D1/D2 Approval");
+          sendApprovalEmail(rowIndex, id, cost, 2);
+        } else if (cost > 5000) {
+          sheet.getRange(rowIndex, 15).setValue("Planner Approved – Awaiting D1 Approval");
+          sendApprovalEmail(rowIndex, id, cost, 2);
+        } else {
+          sheet.getRange(rowIndex, 15).setValue("Planner Approved – Complete");
+          sendCompletionEmail(rowIndex);
+          return HtmlService.createHtmlOutput(`
+            <div style="font-family:Arial; max-width:600px; margin:30px auto; padding:25px; border:1px solid #ccc; border-radius:10px; background-color:#f9fff9; text-align:center;">
+              <h2 style="color:#2e7d32;">✅ Approval Complete</h2>
+              <p style="font-size:14px;">Planner has approved <b>${id}</b>. No further approvals required.</p>
+              <p style="font-size:13px;">You can view this request in the ${sheetLinkHTML}.</p>
+            </div>
+          `);
+        }
 
         return HtmlService.createHtmlOutput(`
-          <div style="
-            font-family:Arial, sans-serif; 
-            max-width:600px; 
-            margin:30px auto; 
-            padding:25px; 
-            border:1px solid #ccc; 
-            border-radius:10px; 
-            background-color:#f9f9f9;
-            text-align:center;
-          ">
-            <h2 style="color:#2e7d32; margin-bottom:10px;">✅ Approval Successful</h2>
-            <p style="font-size:15px; color:#333;">
-              <b>Director 1</b> has approved <b>${id}</b>.
+          <div style="font-family:Arial, sans-serif; max-width:600px; margin:30px auto; padding:25px; border:1px solid #ccc; border-radius:10px; background-color:#f9f9f9; text-align:center;">
+            <h2 style="color:#2e7d32;">✅ Planner Approval Recorded</h2>
+            <p style="font-size:14px; color:#333;">Planner has approved <b>${id}</b>.</p>
+            <p style="font-size:13px; color:#555;">
+              ${cost > 10000
+                ? "Forwarded to Director 1 and Director 2 for approval."
+                : cost > 5000
+                  ? "Forwarded to Director 1 for approval."
+                  : "No further approvals required."}
             </p>
-            <p style="font-size:14px; color:#555;">
-              The request has been forwarded to <b>Director 2</b> for final approval.
-            </p>
-
             <hr style="margin:20px 0; border:none; border-top:1px solid #ddd;">
-
-            <p style="font-size:14px; color:#333;">
-              You can review this request in the ${sheetLinkHTML}.
-            </p>
-
-            <p style="font-size:12px; color:#777; margin-top:15px;">
-              Timestamp: ${now}
-            </p>
+            <p style="font-size:13px;">You can review this request in the ${sheetLinkHTML}.</p>
+            <p style="font-size:12px; color:#777;">Timestamp: ${now}</p>
           </div>
         `);
       }
 
+      // === LEVEL 2 (Director 1) ===
       if (level === "2") {
         sheet.getRange(rowIndex, 11).setValue("Approved");
         sheet.getRange(rowIndex, 12).setValue(now);
-        sheet.getRange(rowIndex, 13).setValue("D2 Approved - Complete");
+
+        if (cost >= 10000) {
+          sheet.getRange(rowIndex, 15).setValue("D1 Approved – Awaiting D2 Approval");
+          sendApprovalEmail(rowIndex, id, cost, 3);
+        } else {
+          sheet.getRange(rowIndex, 15).setValue("D1 Approved – Complete");
+          sendCompletionEmail(rowIndex);
+        }
+
+        return HtmlService.createHtmlOutput(`
+          <div style="font-family:Arial, sans-serif; max-width:600px; margin:30px auto; padding:25px; border:1px solid #ccc; border-radius:10px; background-color:#f9f9f9; text-align:center;">
+            <h2 style="color:#2e7d32;">✅ Approval Successful</h2>
+            <p style="font-size:14px; color:#333;">Director 1 has approved <b>${id}</b>.</p>
+            <p style="font-size:13px; color:#555;">
+              ${cost >= 10000
+                ? "The request has been forwarded to Director 2 for final approval."
+                : "The approval process is now complete."}
+            </p>
+            <p style="font-size:12px; color:#777;">Timestamp: ${now}</p>
+          </div>
+        `);
+      }
+
+      // === LEVEL 3 (Director 2) ===
+      if (level === "3") {
+        sheet.getRange(rowIndex, 13).setValue("Approved");
+        sheet.getRange(rowIndex, 14).setValue(now);
+        sheet.getRange(rowIndex, 15).setValue("D2 Approved – Complete");
 
         sendCompletionEmail(rowIndex);
 
         return HtmlService.createHtmlOutput(`
-          <div style="font-family:Arial, sans-serif; max-width:600px; margin:40px auto; border:1px solid #dcdcdc; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1); padding:25px; background-color:#f9fffa;">
-            <div style="text-align:center; margin-bottom:20px;">
+          <div style="font-family:Arial; max-width:600px; margin:30px auto; border:1px solid #dcdcdc; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1); padding:25px; background-color:#f9fffa;">
+            <div style="text-align:center;">
               <div style="font-size:40px;">✅</div>
-              <h2 style="color:#2e7d32; margin:10px 0 0;">Approval Complete</h2>
+              <h2 style="color:#2e7d32;">Approval Complete</h2>
+              <p style="font-size:14px;">Director 2 has approved <b>${id}</b>. Process complete.</p>
+              <a href="${logLink}" style="background-color:#2e7d32; color:white; text-decoration:none; padding:10px 25px; border-radius:6px; font-size:13px;">🔗 View Expedited Shipments Log</a>
             </div>
-            <p style="font-size:14px; color:#333; line-height:1.6;">
-              Director 2 has successfully <b>approved</b> request <b>${id}</b>.
-              <br><br>
-              The airfreight approval process is now <b>fully complete</b>.
-            </p>
-            <div style="text-align:center; margin:25px 0;">
-              <a href="${logLink}" 
-                style="background-color:#2e7d32; color:white; text-decoration:none; padding:10px 25px; border-radius:6px; font-size:13px; font-weight:bold; letter-spacing:0.3px;">
-                🔗 View Airfreight Log
-              </a>
-            </div>
-            <hr style="border:none; border-top:1px solid #e0e0e0; margin:20px 0;">
-            <p style="font-size:12px; color:#555; text-align:center;">
-              Timestamp: ${now}<br>
-              Request ID: <b>${id}</b>
-            </p>
           </div>
         `);
       }
+
       return HtmlService.createHtmlOutput(`⚠️ Unknown approval level: ${level}`);
     }
 
     // ❌ REJECT
-    // ❌ REJECT
     if (action === "reject") {
-      const reason = level === "1" ? "Director 1" : "Director 2";
-      const approvalCol = level === "1" ? 9 : 11;
-      const timeCol = level === "1" ? 10 : 12;
+      const reason =
+        level === "1" ? "Planner" :
+        level === "2" ? "Director 1" :
+        "Director 2";
+
+      const approvalCol =
+        level === "1" ? 9 :
+        level === "2" ? 11 :
+        13;
+
+      const timeCol =
+        level === "1" ? 10 :
+        level === "2" ? 12 :
+        14;
 
       sheet.getRange(rowIndex, approvalCol).setValue("Rejected");
       sheet.getRange(rowIndex, timeCol).setValue(now);
-      sheet.getRange(rowIndex, 13).setValue(`Rejected by ${reason}`);
+      sheet.getRange(rowIndex, 15).setValue(`Rejected by ${reason}`);
 
       const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
 
-      // 📧 Send rejection email
       GmailApp.sendEmail(
         `${MANAGER_EMAIL}, ${requesterEmail}`,
         `Airfreight Request ${id} - Rejected by ${reason}`,
         "",
         {
           htmlBody: `
-            <div style="
-              font-family:Arial, sans-serif; 
-              max-width:600px; 
-              margin:30px auto; 
-              padding:25px; 
-              border:1px solid #e0b4b4; 
-              border-radius:10px; 
-              background-color:#fff5f5;
-            ">
+            <div style="font-family:Arial; max-width:600px; margin:30px auto; border:1px solid #e0b4b4; border-radius:10px; background-color:#fff5f5; padding:25px;">
               <h2 style="color:#c0392b; text-align:center;">❌ Request Rejected</h2>
-
-              <p style="font-size:15px; color:#333;">
-                Airfreight Request <b>${id}</b> has been <b>REJECTED</b> by ${reason}.
-              </p>
-
-              <p style="font-size:14px; color:#555;">
-                Please review the details in the ${sheetLinkHTML} and take appropriate action.
-              </p>
-
-              <hr style="margin:20px 0; border:none; border-top:1px solid #ddd;">
-
-              <p style="font-size:12px; color:#777;">
-                Timestamp: ${now}
-              </p>
+              <p><b>${reason}</b> has rejected airfreight request <b>${id}</b>.</p>
+              <p>Review the details in the ${sheetLinkHTML}.</p>
+              <p style="font-size:12px; color:#777;">Timestamp: ${now}</p>
             </div>
           `
         }
       );
 
-      // 🧾 Display a styled rejection confirmation page
       return HtmlService.createHtmlOutput(`
-        <div style="
-          font-family:Arial, sans-serif; 
-          max-width:600px; 
-          margin:30px auto; 
-          padding:25px; 
-          border:1px solid #e0b4b4; 
-          border-radius:10px; 
-          background-color:#fff5f5;
-          text-align:center;
-        ">
-          <h2 style="color:#c0392b; margin-bottom:10px;">❌ Rejection Recorded</h2>
-          <p style="font-size:15px; color:#333;">
-            <b>${reason}</b> has rejected request <b>${id}</b>.
-          </p>
-
-          <p style="font-size:14px; color:#555;">
-            You can review this request in the ${sheetLinkHTML}.
-          </p>
-
-          <hr style="margin:20px 0; border:none; border-top:1px solid #ddd;">
-
-          <p style="font-size:12px; color:#777;">
-            Timestamp: ${now}
-          </p>
+        <div style="font-family:Arial; max-width:600px; margin:30px auto; padding:25px; border:1px solid #e0b4b4; border-radius:10px; background-color:#fff5f5; text-align:center;">
+          <h2 style="color:#c0392b;">❌ Rejection Recorded</h2>
+          <p><b>${reason}</b> has rejected request <b>${id}</b>.</p>
+          <p>View this request in the ${sheetLinkHTML}.</p>
+          <p style="font-size:12px; color:#777;">Timestamp: ${now}</p>
         </div>
       `);
     }
 
     return HtmlService.createHtmlOutput("⚠️ Unknown action.");
-
   } catch (err) {
     Logger.log("🚨 doGet ERROR: " + err.message);
     return HtmlService.createHtmlOutput("🚨 Script error: " + err.message);
   }
 }
-
 
 
 // ======================
@@ -417,14 +446,10 @@ function sendCompletionEmail(rowIndex) {
     "",
     {
       htmlBody: `
-        Airfreight Request <b>${id}</b> has been approved by both Directors.<br><br>
+        Airfreight Request <b>${id}</b> has been approved by Planner and both Directors.<br><br>
         This request is now marked as <b>D2 Approved – Complete</b>.<br><br>
         You may proceed with shipping arrangements.
       `
     }
   );
 }
-
-
-
-// Order: column A, etc: Request ID	Requester Email	Supplier	Part Number	Quantity	Need By Date	Rational (Why Airfreight)	Airfreight Cost	D1 Approval	D1 Timestamp	D2 Approval	D2 Timestamp	Overall Status
