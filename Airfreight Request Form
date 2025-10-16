@@ -424,3 +424,7 @@ function sendCompletionEmail(rowIndex) {
     }
   );
 }
+
+
+
+// Order: column A, etc: Request ID	Requester Email	Supplier	Part Number	Quantity	Need By Date	Rational (Why Airfreight)	Airfreight Cost	D1 Approval	D1 Timestamp	D2 Approval	D2 Timestamp	Overall Status
