@@ -49,6 +49,11 @@ function onFormSubmit(e) {
     "", "", "", "", "", "New Request - Awaiting Cost"
   ];
   sheet.appendRow(row);
+  // 🟨 Highlight Airfreight Cost cell (column H)
+  const lastRow = sheet.getLastRow();
+  const costCell = sheet.getRange(lastRow, 8); // Column H
+  costCell.setBackground("#FFFF00"); // light yellow
+
 
   // === Send styled email ===
   const logLink = "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
@@ -99,12 +104,13 @@ function onEdit(e) {
   const cost = e.range.getValue();
 
   if (cost && cost !== "") {
+    // 🟩 Remove highlight once cost is entered
+    e.range.setBackground(null);
+
     sheet.getRange(row, 13).setValue("Cost Added - Awaiting D1 Approval");
     sendApprovalEmail(row, id, cost, 1);
   }
 }
-
-
 
 // ======================
 // ✉️ 3. SEND APPROVAL EMAILS
