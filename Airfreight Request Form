@@ -462,3 +462,6 @@ function sendCompletionEmail(rowIndex) {
     }
   );
 }
+
+
+//Columns order: Request ID	Requester Email	Supplier	List of PO, Part Number. Quantity	Transportation Mode	Need by Date	Reasoning for Expedited Shipments	Additional Comments On Reasoning  	Freight Cost	Planner Approval	Planner Timestamp	D1 Approval	D1Timestamp		D2 Approval	D2 Timestamp	Cost Added - Awaiting Planner Approval
