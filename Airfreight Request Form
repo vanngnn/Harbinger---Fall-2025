@@ -42,6 +42,7 @@ function onFormSubmit(e) {
   const transportationMode = responses[4];
   const needBy = responses[5];
   const rational = responses[6];
+  const rationalComments = responses[7]
 
   const row = [
     id,
@@ -51,12 +52,13 @@ function onFormSubmit(e) {
     transportationMode,//qty
     needBy,
     rational,
+    rationalComments,
     "", "", "", "", "", "","", "New Request - Awaiting Cost"
   ];
   sheet.appendRow(row);
-  // 🟨 Highlight Airfreight Cost cell (column H)
+  // 🟨 Highlight Airfreight Cost cell (column I)
   const lastRow = sheet.getLastRow();
-  const costCell = sheet.getRange(lastRow, 8); // Column H
+  const costCell = sheet.getRange(lastRow, 9); // Column I
   costCell.setBackground("#FFFF00"); // light yellow
 
 
@@ -75,6 +77,7 @@ function onFormSubmit(e) {
       <tr><td style="padding:8px;"><b>Transportation Mode</b></td><td style="padding:8px;">${transportationMode}</td></tr>
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Need By</b></td><td style="padding:8px;">${needBy}</td></tr>
       <tr><td style="padding:8px;"><b>Reason</b></td><td style="padding:8px;">${rational}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Additional Comments on Reasoning</b></td><td style="padding:8px;">${rationalComments}</td></tr>
     </table>
     <br>
     <p style="font-family:Arial; font-size:13px;">
@@ -102,8 +105,8 @@ function onEdit(e) {
   const col = e.range.getColumn();
   const row = e.range.getRow();
 
-  // Airfreight Cost = column H (8)
-  if (col !== 8) return;
+  // Airfreight Cost = column H (9)
+  if (col !== 9) return;
 
   const id = sheet.getRange(row, 1).getValue();
   const cost = e.range.getValue();
@@ -112,7 +115,7 @@ function onEdit(e) {
     // 🟩 Remove highlight once cost is entered
     e.range.setBackground(null);
 
-    sheet.getRange(row, 15).setValue("Cost Added - Awaiting Planner Approval");
+    sheet.getRange(row, 16).setValue("Cost Added - Awaiting Planner Approval");
     sendApprovalEmail(row, id, cost, 1);
   }
 }
@@ -132,6 +135,7 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   const transportationMode = sheet.getRange(row,5).getValue();
   const needBy = sheet.getRange(row,6).getValue();
   const rational = sheet.getRange(row,7).getValue();
+  const rationalComments = sheet.getRange(row,8).getValue();
 
   let toEmail = "";
   let next = "";
@@ -206,8 +210,13 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
       </tr>
 
       <tr>
+        <td style="padding:8px;"><b>Additional Comments on Reasoning</b></td>
+        <td style="padding:8px;">${rationalComments}</td>
+      </tr>
+
+      <tr style="background-color:#f9f9f9;">
         <td style="padding:8px;"><b>Freight Cost</b></td>
-        <td style="padding:8px;">$${cost}</td>
+        <td style="padding:8px;">${cost}</td>
       </tr>
 
     </table>
@@ -279,22 +288,22 @@ function doGet(e) {
 
     // ✅ APPROVE
     if (action === "approve") {
-      const cost = sheet.getRange(rowIndex, 8).getValue();
+      const cost = Number(sheet.getRange(rowIndex, 9).getValue());
 
       // === LEVEL 1 (Planner) ===
       if (level === "1") {
-        sheet.getRange(rowIndex, 9).setValue("Approved");
-        sheet.getRange(rowIndex, 10).setValue(now);
+        sheet.getRange(rowIndex, 10).setValue("Approved");
+        sheet.getRange(rowIndex, 11).setValue(now);
 
         // Threshold-based routing
         if (cost > 10000) {
-          sheet.getRange(rowIndex, 15).setValue("Planner Approved – Awaiting D1/D2 Approval");
+          sheet.getRange(rowIndex, 16).setValue("Planner Approved – Awaiting D1/D2 Approval");
           sendApprovalEmail(rowIndex, id, cost, 2);
         } else if (cost > 5000) {
-          sheet.getRange(rowIndex, 15).setValue("Planner Approved – Awaiting D1 Approval");
+          sheet.getRange(rowIndex, 16).setValue("Planner Approved – Awaiting D1 Approval");
           sendApprovalEmail(rowIndex, id, cost, 2);
         } else {
-          sheet.getRange(rowIndex, 15).setValue("Planner Approved – Complete");
+          sheet.getRange(rowIndex, 16).setValue("Planner Approved – Complete");
           sendCompletionEmail(rowIndex);
           return HtmlService.createHtmlOutput(`
             <div style="font-family:Arial; max-width:600px; margin:30px auto; padding:25px; border:1px solid #ccc; border-radius:10px; background-color:#f9fff9; text-align:center;">
@@ -325,14 +334,14 @@ function doGet(e) {
 
       // === LEVEL 2 (Director 1) ===
       if (level === "2") {
-        sheet.getRange(rowIndex, 11).setValue("Approved");
-        sheet.getRange(rowIndex, 12).setValue(now);
+        sheet.getRange(rowIndex, 12).setValue("Approved");
+        sheet.getRange(rowIndex, 13).setValue(now);
 
         if (cost >= 10000) {
-          sheet.getRange(rowIndex, 15).setValue("D1 Approved – Awaiting D2 Approval");
+          sheet.getRange(rowIndex, 16).setValue("D1 Approved – Awaiting D2 Approval");
           sendApprovalEmail(rowIndex, id, cost, 3);
         } else {
-          sheet.getRange(rowIndex, 15).setValue("D1 Approved – Complete");
+          sheet.getRange(rowIndex, 16).setValue("D1 Approved – Complete");
           sendCompletionEmail(rowIndex);
         }
 
@@ -352,9 +361,9 @@ function doGet(e) {
 
       // === LEVEL 3 (Director 2) ===
       if (level === "3") {
-        sheet.getRange(rowIndex, 13).setValue("Approved");
-        sheet.getRange(rowIndex, 14).setValue(now);
-        sheet.getRange(rowIndex, 15).setValue("D2 Approved – Complete");
+        sheet.getRange(rowIndex, 14).setValue("Approved");
+        sheet.getRange(rowIndex, 15).setValue(now);
+        sheet.getRange(rowIndex, 16).setValue("D2 Approved – Complete");
 
         sendCompletionEmail(rowIndex);
 
@@ -381,18 +390,18 @@ function doGet(e) {
         "Director 2";
 
       const approvalCol =
-        level === "1" ? 9 :
-        level === "2" ? 11 :
+        level === "1" ? 10 :
+        level === "2" ? 12 :
         13;
 
       const timeCol =
-        level === "1" ? 10 :
-        level === "2" ? 12 :
+        level === "1" ? 11 :
+        level === "2" ? 13 :
         14;
 
       sheet.getRange(rowIndex, approvalCol).setValue("Rejected");
       sheet.getRange(rowIndex, timeCol).setValue(now);
-      sheet.getRange(rowIndex, 15).setValue(`Rejected by ${reason}`);
+      sheet.getRange(rowIndex, 16).setValue(`Rejected by ${reason}`);
 
       const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
 
