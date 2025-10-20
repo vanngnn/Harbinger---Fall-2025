@@ -229,32 +229,125 @@ function doGet(e) {
     const logLink = "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
     const sheetLinkHTML = `<a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Expedited Shipments Log</b></a>`;
 
-    // === APPROVE ===
     if (action === "approve") {
       const cost = Number(sheet.getRange(rowIndex, 9).getValue());
+      let title = "";
+      let message = "";
+      let color = "";
+
       if (level === "1") {
         sheet.getRange(rowIndex, 10).setValue("Approved");
         sheet.getRange(rowIndex, 11).setValue(now);
-        if (cost > 5000) sendApprovalEmail(rowIndex, id, cost, 2);
-        else sendCompletionEmail(rowIndex);
-        return HtmlService.createHtmlOutput(`✅ Planner Approval Recorded`);
+
+        if (cost < 5000) {
+          sheet.getRange(rowIndex, 19).setValue("Planner Approved – Complete");
+          sendCompletionEmail(rowIndex);
+          title = "✅ Request Approved";
+          message = "Planner approved. Request fully approved and processed.";
+          color = "#2ecc71";
+        } else if (cost >= 5000 && cost < 10000) {
+          sheet.getRange(rowIndex, 19).setValue("Planner Approved – Sent to Director 1");
+          sendApprovalEmail(rowIndex, id, cost, 2);
+          title = "🟦 Approval Progressed";
+          message = "Planner approved. Forwarded to <b>Director 1</b> for approval.";
+          color = "#3498db";
+        } else {
+          sheet.getRange(rowIndex, 19).setValue("Planner Approved – Sent to Director 1 & Director 2");
+          sendApprovalEmail(rowIndex, id, cost, 2);
+          title = "🟩 Approval Progressed";
+          message = "Planner approved. Forwarded to <b>Director 1</b> and <b>Director 2</b> for approval.";
+          color = "#27ae60";
+        }
       }
-      if (level === "2") {
+
+      else if (level === "2") {
         sheet.getRange(rowIndex, 13).setValue("Approved");
         sheet.getRange(rowIndex, 14).setValue(now);
-        if (cost >= 10000) sendApprovalEmail(rowIndex, id, cost, 3);
-        else sendCompletionEmail(rowIndex);
-        return HtmlService.createHtmlOutput(`✅ Director 1 Approval Recorded`);
+
+        if (cost >= 10000) {
+          sheet.getRange(rowIndex, 19).setValue("Director 1 Approved – Sent to Director 2");
+          sendApprovalEmail(rowIndex, id, cost, 3);
+          title = "🟦 Approval Progressed";
+          message = "Director 1 approved. Forwarded to <b>Director 2</b> for final approval.";
+          color = "#2980b9";
+        } else {
+          sheet.getRange(rowIndex, 19).setValue("Director 1 Approved – Complete");
+          sendCompletionEmail(rowIndex);
+          title = "✅ Request Approved";
+          message = "Director 1 approved. Request fully approved and processed.";
+          color = "#2ecc71";
+        }
       }
-      if (level === "3") {
+
+      else if (level === "3") {
         sheet.getRange(rowIndex, 16).setValue("Approved");
         sheet.getRange(rowIndex, 17).setValue(now);
-        sheet.getRange(rowIndex, 18).setValue("D2 Approved – Complete");
+        sheet.getRange(rowIndex, 19).setValue("D2 Approved – Complete");
         sendCompletionEmail(rowIndex);
-        return HtmlService.createHtmlOutput(`✅ Director 2 Approval Complete`);
+        title = "🏁 Final Approval Complete";
+        message = "Director 2 approved. Request fully approved and processed.";
+        color = "#16a085";
       }
-    }
 
+      // === Return Styled Confirmation Page ===
+      return HtmlService.createHtmlOutput(`
+        <html>
+          <head>
+            <title>${title}</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                background-color: #f6f9fc;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+              }
+              .card {
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+                padding: 40px;
+                text-align: center;
+                max-width: 450px;
+                animation: fadeIn 0.7s ease-in-out;
+              }
+              h2 {
+                color: ${color};
+                margin-bottom: 10px;
+              }
+              p {
+                font-size: 16px;
+                color: #333;
+              }
+              a {
+                display: inline-block;
+                margin-top: 20px;
+                padding: 10px 20px;
+                background-color: ${color};
+                color: white;
+                border-radius: 8px;
+                text-decoration: none;
+                transition: background 0.3s;
+              }
+              a:hover { background-color: #1b4d3e; }
+              @keyframes fadeIn {
+                from { opacity: 0; transform: scale(0.9); }
+                to { opacity: 1; transform: scale(1); }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h2>${title}</h2>
+              <p>${message}</p>
+              <a href="https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178" target="_blank">View in Expedited Shipments Log</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
 
     if (action === "rejectForm") {
       return HtmlService.createHtmlOutput(`
@@ -309,15 +402,44 @@ function doGet(e) {
       sheet.getRange(rowIndex, 19).setValue("Rejected");
 
       // Send notification email
-      const requesterEmail = sheet.getRange(rowIndex,2).getValue();
+      const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
+
+      const subject = `Airfreight Request ${id} – Rejected by ${reason}`;
+      const htmlBody = `
+        <div style="font-family:Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#333; background:#f9f9f9; padding:25px; border-radius:10px;">
+          <h2 style="color:#c0392b; margin-top:0;">❌ Airfreight Request Rejected</h2>
+          <table style="width:100%; border-collapse:collapse; font-size:15px;">
+            <tr>
+              <td style="width:180px; font-weight:bold; padding:8px; border-bottom:1px solid #ddd;">Request ID:</td>
+              <td style="padding:8px; border-bottom:1px solid #ddd;">${id}</td>
+            </tr>
+            <tr>
+              <td style="font-weight:bold; padding:8px; border-bottom:1px solid #ddd;">Rejected By:</td>
+              <td style="padding:8px; border-bottom:1px solid #ddd;">${reason}</td>
+            </tr>
+            <tr>
+              <td style="font-weight:bold; padding:8px; border-bottom:1px solid #ddd;">Status:</td>
+              <td style="padding:8px; border-bottom:1px solid #ddd; color:#c0392b; font-weight:bold;">Rejected</td>
+            </tr>
+            <tr>
+              <td style="font-weight:bold; padding:8px; vertical-align:top;">Reason / Comments:</td>
+              <td style="padding:8px;">${comment}</td>
+            </tr>
+          </table>
+
+          <p style="margin-top:20px; font-size:15px;">
+            View this request in the <a href="${logLink}" style="color:#2980b9; text-decoration:none;">Expedited Shipments Log</a>.
+          </p>
+        </div>
+      `;
+
       GmailApp.sendEmail(
         `${MANAGER_EMAIL}, ${requesterEmail}`,
-        `Airfreight Request ${id} - Rejected by ${reason}`,
+        subject,
         "",
-        { htmlBody: `<p>Request <b>${id}</b> was rejected by <b>${reason}</b>.</p>
-                     <p>Reason: ${comment}</p>
-                     <p>See ${sheetLinkHTML}</p>` }
+        { htmlBody }
       );
+
       return HtmlService.createHtmlOutput(`
         <html>
           <body style="font-family:Arial; padding:30px;">
@@ -332,7 +454,6 @@ function doGet(e) {
           </body>
         </html>
       `);
-
     }
 
     return HtmlService.createHtmlOutput("⚠️ Unknown action.");
@@ -346,12 +467,61 @@ function doGet(e) {
 // ======================
 function sendCompletionEmail(row) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
-  const id = sheet.getRange(row,1).getValue();
-  const requesterEmail = sheet.getRange(row,2).getValue();
-  const supplier = sheet.getRange(row,3).getValue();
+
+  const id = sheet.getRange(row, 1).getValue();
+  const requesterEmail = sheet.getRange(row, 2).getValue();
+  const supplier = sheet.getRange(row, 3).getValue();
+  const listPartNumber = sheet.getRange(row, 4).getValue();
+  const transportationMode = sheet.getRange(row, 5).getValue();
+  const needBy = sheet.getRange(row, 6).getValue();
+  const rational = sheet.getRange(row, 7).getValue();
+  const rationalComments = sheet.getRange(row, 8).getValue();
+  const cost = sheet.getRange(row, 9).getValue();
+
+  const formattedCost = Number(cost).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+
+  const logLink =
+    "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
+
+  const htmlBody = `
+    <p style="font-family:Arial; font-size:14px;">✅ The following airfreight request has been <b>fully approved and processed</b>:</p>
+    <table style="border-collapse:collapse; width:600px; font-family:Arial; font-size:13px; border:1px solid #ccc; border-radius:8px; overflow:hidden;">
+      <tr style="background-color:#172d44; color:white; text-align:left;">
+        <th style="padding:8px; width:40%;">Field</th>
+        <th style="padding:8px; width:60%;">Details</th>
+      </tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Request ID</b></td><td style="padding:8px;">${id}</td></tr>
+      <tr><td style="padding:8px;"><b>Requester</b></td><td style="padding:8px;">${requesterEmail}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Supplier</b></td><td style="padding:8px;">${supplier}</td></tr>
+      <tr><td style="padding:8px;"><b>List of PO, Part Number, Qty</b></td><td style="padding:8px;">${listPartNumber}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Transportation Mode</b></td><td style="padding:8px;">${transportationMode}</td></tr>
+      <tr><td style="padding:8px;"><b>Need By</b></td><td style="padding:8px;">${needBy}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Reason</b></td><td style="padding:8px;">${rational}</td></tr>
+      <tr><td style="padding:8px;"><b>Additional Comments</b></td><td style="padding:8px;">${rationalComments}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Freight Cost</b></td><td style="padding:8px;">${formattedCost}</td></tr>
+    </table>
+    <br>
+
+    <p style="font-family:Arial; font-size:14px; background:#e8f5e9; border-left:4px solid #2e7d32; padding:10px 12px; border-radius:6px;">
+      <b>Please go ahead and confirm the shipment.</b>
+    </p>
+
+
+    <p style="font-family:Arial; font-size:13px;">
+      You can view the full record in the
+      <a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Expedited Shipments Log</b></a>.
+    </p>
+  `;
+
+  // 📧 Send to both Requester and Manager
   GmailApp.sendEmail(
-    requesterEmail,
-    `Airfreight Request ${id} - Completed`,
-    `Your airfreight request ${id} has been fully approved and processed.`
+    `${requesterEmail}, ${MANAGER_EMAIL}`,
+    `Airfreight Request ${id} – Fully Approved`,
+    "",
+    { htmlBody: htmlBody }
   );
 }
+
