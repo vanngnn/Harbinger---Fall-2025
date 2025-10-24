@@ -41,6 +41,7 @@ function onFormSubmit(e) {
   const needBy = responses[5];
   const rational = responses[6];
   const rationalComments = responses[7] || "";
+  const dateSubmitted = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
 
   const row = [
     id,
@@ -51,7 +52,7 @@ function onFormSubmit(e) {
     needBy,
     rational,
     rationalComments,
-    "", "", "", "", "", "","","","","", "New Request - Awaiting Cost"
+    "", "", "", "", "", "","","","","", "New Request - Awaiting Cost", PLANNER_EMAIL, dateSubmitted
   ];
   sheet.appendRow(row);
   // 🟨 Highlight Airfreight Cost cell (column I)
@@ -132,7 +133,12 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   let toEmail = "";
   let next = "";
 
-  if (approverLevel === 1) { toEmail = PLANNER_EMAIL; next = "Planner"; }
+  if (approverLevel === 1) {
+    // Column D (index 4) contains the CSV URL for this row
+    const csvUrl = sheet.getRange(row, 4).getValue(); 
+    toEmail = getPlannerEmailFromCSV(csvUrl);
+    next = "Planner";
+  }
   else if (approverLevel === 2) { toEmail = DIRECTOR1_EMAIL; next = "Director 1"; }
   else if (approverLevel === 3) { toEmail = DIRECTOR2_EMAIL; next = "Director 2"; }
 
@@ -238,6 +244,9 @@ function doGet(e) {
       if (level === "1") {
         sheet.getRange(rowIndex, 10).setValue("Approved");
         sheet.getRange(rowIndex, 11).setValue(now);
+        //Log planner name
+        const plannerName = Session.getActiveUser().getEmail()|| "Planner";
+        sheet.getRange(rowIndex,20).setValue(plannerName);
 
         if (cost < 5000) {
           sheet.getRange(rowIndex, 19).setValue("Planner Approved – Complete");
@@ -524,4 +533,48 @@ function sendCompletionEmail(row) {
     { htmlBody: htmlBody }
   );
 }
+
+
+// Helper: get planner email from CSV file link in column D
+function getPlannerEmailFromCSV(csvLink) {
+  try {
+    if (!csvLink) return PLANNER_EMAIL; // fallback if no link
+
+    // Extract the file ID from the Google Drive link
+    const fileIdMatch = csvLink.match(/[-\w]{25,}/);
+    if (!fileIdMatch) return PLANNER_EMAIL;
+    const fileId = fileIdMatch[0];
+
+    // Access the file from Drive
+    const file = DriveApp.getFileById(fileId);
+    const csvContent = file.getBlob().getDataAsString();
+    const rows = Utilities.parseCsv(csvContent);
+
+    if (!rows || rows.length < 3) return PLANNER_EMAIL; // fallback if CSV is too short
+
+    const emailCounts = {};
+    // Start reading from row 3 (index 2) as per your instruction
+    for (let i = 2; i < rows.length; i++) {
+      const email = rows[i][3]; // Column D in CSV (index 3)
+      if (!email) continue;
+      emailCounts[email] = (emailCounts[email] || 0) + 1;
+    }
+
+    // Get the most frequent email
+    let mostFrequentEmail = PLANNER_EMAIL;
+    let maxCount = 0;
+    for (const email in emailCounts) {
+      if (emailCounts[email] > maxCount) {
+        maxCount = emailCounts[email];
+        mostFrequentEmail = email;
+      }
+    }
+
+    return mostFrequentEmail;
+  } catch (err) {
+    Logger.log("Error fetching CSV from Drive: " + err);
+    return PLANNER_EMAIL; // fallback
+  }
+}
+
 
