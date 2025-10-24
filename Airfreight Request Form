@@ -577,4 +577,5 @@ function getPlannerEmailFromCSV(csvLink) {
   }
 }
 
+//Columns: Request ID	Requester Email	Supplier	List of PO, Part Number. Quantity	Transportation Mode	Need by Date	Reasoning for Expedited Shipments	Additional Comments On Reasoning	Freight Cost	Planner Approval	Planner Timestamp	Planner's Comment (if reject)	D1 Approval	D1Timestamp	D1's Comment (if reject)	D2 Approval	D2 Timestamp	D2's Comment (if reject)	Overall Status	Planner	Date Submitted 	Charge back to Supplier?
 
