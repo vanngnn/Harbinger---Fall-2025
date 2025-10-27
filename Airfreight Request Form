@@ -122,18 +122,18 @@ function onEdit(e) {
 
   const id = sheet.getRange(row, 1).getValue();
   const cost = e.range.getValue();
-  const prodornonprod = sheet.getRange(row, 5).getValue(); // Production or Non-production
+  const prodornonprod = sheet.getRange(row, 5).getValue().toString().trim().toLowerCase(); // normalize
 
   if (cost && cost !== "") {
     // 🟩 Remove highlight once cost is entered
     e.range.setBackground(null);
 
-    if (prodornonprod === "Production") {
+    if (prodornonprod === "production") {
       // 🏭 Production flow → send to planner
       sheet.getRange(row, 22).setValue("Cost Added - Awaiting Planner Approval");
       sendApprovalEmail(row, id, cost, 1);
 
-    } else if (prodornonprod === "Non-production") {
+    } else if (prodornonprod === "non-production") {
       // 🧾 Non-production flow → skip planner
       if (cost >= 10000) {
         sheet.getRange(row, 22).setValue("Cost Added - Sent to Director 1 (then Director 2)");
@@ -167,9 +167,12 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   let next = "";
 
   // 🧠 Skip planner if non-production
-  if (approverLevel === 1 && prodornonprod === "Non-production") {
-    Logger.log(`Skipping planner email for Non-production request ${id}`);
-    return; // Exit early — no planner email sent
+  if (approverLevel === 1 && prodornonprod === "production") {
+    // send to planner
+  } else if (approverLevel === 1 && prodornonprod === "non-production") {
+    // non-production → skip planner, actually should never happen
+    Logger.log(`Non-production request should not call level 1`);
+    return;
   }
 
   if (approverLevel === 1) {
