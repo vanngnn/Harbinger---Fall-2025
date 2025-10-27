@@ -1,7 +1,7 @@
 // ======================
 // 🧠 CONFIGURATION
 // ======================
-const SPREADSHEET_ID = "1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI"; // Spreadsheet ID
+const SPREADSHEET_ID = "1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0"; // Spreadsheet ID
 const SHEET_NAME = "Expedited Freight Log"; // workflow tab
 
 //Main contacts:
@@ -13,7 +13,7 @@ const DIRECTOR1_EMAIL = "van.nguyen2@harbingermotors.com";
 const DIRECTOR2_EMAIL = "van.nguyen2@harbingermotors.com";
 
 // ✅ Latest deployed Web App URL (NO /u/4/)
-const BASE_URL = "https://script.google.com/a/macros/harbingermotors.com/s/AKfycbwkydQR1No46YCUhFe2b3mDDO_TJ60d_srMeWYnP7ThxYG1iRHCB7c_wvm8ty0lp-HRXw/exec";
+const BASE_URL = "https://script.google.com/a/macros/harbingermotors.com/s/AKfycbxYYVHo9D8YYJNVb9nwWFE6fwxKqXB6et69skc8KywSuvJZZKqB7f58WWv-BehyfoA_hw/exec";
 
 // ======================
 // 📨 1. ON FORM SUBMIT
@@ -37,31 +37,39 @@ function onFormSubmit(e) {
   const requesterEmail = responses[1];
   const supplier = responses[2];
   const listPartNumber = responses[3];
-  const transportationMode = responses[4];
-  const needBy = responses[5];
-  const rational = responses[6];
-  const rationalComments = responses[7] || "";
+  const prodornonprod = responses[4];
+  const chargesupplier = responses[5];
+  const transportationMode = responses[6];
+  const needBy = responses[7];
+  const rational = responses[8];
+  const rationalComments = responses[9] || "";
+  const jiraTicket = responses[10];
+
+
   const dateSubmitted = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
 
   const row = [
-    id,
-    requesterEmail,
-    supplier,
-    listPartNumber,//partNumber
-    transportationMode,//qty
-    needBy,
-    rational,
-    rationalComments,
-    "", "", "", "", "", "","","","","", "New Request - Awaiting Cost", PLANNER_EMAIL, dateSubmitted
+    id, requesterEmail, supplier, listPartNumber,
+    prodornonprod, chargesupplier,
+    transportationMode, needBy, rational, rationalComments, jiraTicket,
+    "", // Freight Cost
+    "", "", "", // Planner Approval, Timestamp, Comment
+    "", "", "", // D1 Approval, Timestamp, Comment
+    "", "", "", // D2 Approval, Timestamp, Comment
+    "New Request - Awaiting Cost",
+    PLANNER_EMAIL,
+    dateSubmitted
   ];
+
+
   sheet.appendRow(row);
-  // 🟨 Highlight Airfreight Cost cell (column I)
+  // 🟨 Highlight Airfreight Cost cell (column L)
   const lastRow = sheet.getLastRow();
-  const costCell = sheet.getRange(lastRow, 9); // column I
+  const costCell = sheet.getRange(lastRow, 12); // column L
   costCell.setBackground("#FFFF00"); // highlight cost cell
 
   // === Send styled email ===
-  const logLink = "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
+  const logLink = "https://docs.google.com/spreadsheets/d/1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0/edit?gid=148482207#gid=148482207";
   const htmlBody = `
     <p style="font-family:Arial; font-size:14px;">A new airfreight request was submitted by <b>${requesterEmail}</b>.</p>
     <table style="border-collapse:collapse; width:600px; font-family:Arial; font-size:13px; border:1px solid #ccc; border-radius:8px; overflow:hidden;">
@@ -72,10 +80,18 @@ function onFormSubmit(e) {
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Request ID</b></td><td style="padding:8px;">${id}</td></tr>
       <tr><td style="padding:8px;"><b>Supplier</b></td><td style="padding:8px;">${supplier}</td></tr>
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>List of PO, Part Number, Qty</b></td><td style="padding:8px;">${listPartNumber}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Production or Non-production</b></td><td style="padding:8px;">${prodornonprod}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Charge back to supplier?</b></td><td style="padding:8px;">${chargesupplier}</td></tr>
       <tr><td style="padding:8px;"><b>Transportation Mode</b></td><td style="padding:8px;">${transportationMode}</td></tr>
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Need By</b></td><td style="padding:8px;">${needBy}</td></tr>
-      <tr><td style="padding:8px;"><b>Reason</b></td><td style="padding:8px;">${rational}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Reasoning</b></td><td style="padding:8px;">${rational}</td></tr>
+
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Additional Comments on Reasoning</b></td><td style="padding:8px;">${rationalComments}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Jira Ticket (if applicable)</b></td><td style="padding:8px;">${jiraTicket}</td></tr>
+
     </table>
     <br>
     <p style="font-family:Arial; font-size:13px;">
@@ -101,18 +117,32 @@ function onEdit(e) {
   const col = e.range.getColumn();
   const row = e.range.getRow();
 
-  // Airfreight Cost = column I (9)
-  if (col !== 9) return;
+  // Airfreight Cost = column L (12)
+  if (col !== 12) return;
 
   const id = sheet.getRange(row, 1).getValue();
   const cost = e.range.getValue();
+  const prodornonprod = sheet.getRange(row, 5).getValue(); // Production or Non-production
 
   if (cost && cost !== "") {
     // 🟩 Remove highlight once cost is entered
     e.range.setBackground(null);
 
-    sheet.getRange(row, 19).setValue("Cost Added - Awaiting Planner Approval");
-    sendApprovalEmail(row, id, cost, 1);
+    if (prodornonprod === "Production") {
+      // 🏭 Production flow → send to planner
+      sheet.getRange(row, 22).setValue("Cost Added - Awaiting Planner Approval");
+      sendApprovalEmail(row, id, cost, 1);
+
+    } else if (prodornonprod === "Non-production") {
+      // 🧾 Non-production flow → skip planner
+      if (cost >= 10000) {
+        sheet.getRange(row, 22).setValue("Cost Added - Sent to Director 1 (then Director 2)");
+        sendApprovalEmail(row, id, cost, 2); // Director 1 first
+      } else {
+        sheet.getRange(row, 22).setValue("Cost Added - Sent to Director 1 (Skipping Planner)");
+        sendApprovalEmail(row, id, cost, 2); // Director 1 only
+      }
+    }
   }
 }
 
@@ -125,13 +155,22 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   const requesterEmail = sheet.getRange(row,2).getValue();
   const supplier   = sheet.getRange(row, 3).getValue();
   const listPartNumber = sheet.getRange(row, 4).getValue();
-  const transportationMode = sheet.getRange(row,5).getValue();
-  const needBy = sheet.getRange(row,6).getValue();
-  const rational = sheet.getRange(row,7).getValue();
-  const rationalComments = sheet.getRange(row,8).getValue();
+  const prodornonprod = sheet.getRange(row, 5).getValue();
+  const chargesupplier = sheet.getRange(row,6).getValue();
+  const transportationMode = sheet.getRange(row,7).getValue();
+  const needBy = sheet.getRange(row,8).getValue();
+  const rational = sheet.getRange(row,9).getValue();
+  const rationalComments = sheet.getRange(row,10).getValue();
+  const jiraTicket = sheet.getRange(row, 11).getValue();
 
   let toEmail = "";
   let next = "";
+
+  // 🧠 Skip planner if non-production
+  if (approverLevel === 1 && prodornonprod === "Non-production") {
+    Logger.log(`Skipping planner email for Non-production request ${id}`);
+    return; // Exit early — no planner email sent
+  }
 
   if (approverLevel === 1) {
     // Column D (index 4) contains the CSV URL for this row
@@ -147,7 +186,7 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
     maximumFractionDigits: 0
   });
 
-  const logLink = "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
+  const logLink = "https://docs.google.com/spreadsheets/d/1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0/edit?gid=148482207#gid=148482207";
   const sheetLinkHTML = `<a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Expedited Shipments Log</b></a>`;
 
   const approveUrl = `${BASE_URL}?action=approve&level=${approverLevel}&id=${id}`;
@@ -165,12 +204,25 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Request ID</b></td><td style="padding:8px;">${id}</td></tr>
       <tr><td style="padding:8px;"><b>Requester</b></td><td style="padding:8px;">${requesterEmail}</td></tr>
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Supplier</b></td><td style="padding:8px;">${supplier}</td></tr>
+      
       <tr><td style="padding:8px;"><b>List of PO, Part Number, QTY</b></td><td style="padding:8px;">${listPartNumber}</td></tr>
+
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Production or Non-production</b></td><td style="padding:8px;">${prodornonprod}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Charge back to supplier?</b></td><td style="padding:8px;">${chargesupplier}</td></tr>
+
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Transportation Mode</b></td><td style="padding:8px;">${transportationMode}</td></tr>
+
       <tr><td style="padding:8px;"><b>Need By</b></td><td style="padding:8px;">${needBy}</td></tr>
+
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Reasoning</b></td><td style="padding:8px;">${rational}</td></tr>
+
       <tr><td style="padding:8px;"><b>Additional Comments on Reasoning</b></td><td style="padding:8px;">${rationalComments}</td></tr>
-      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Freight Cost</b></td><td style="padding:8px;">${formattedCost}</td></tr>
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Jira Ticket (if applicable)</b></td><td style="padding:8px;">${jiraTicket}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Freight Cost</b></td><td style="padding:8px;">${formattedCost}</td></tr>
+
+
     </table>
 
     <br>
@@ -232,55 +284,78 @@ function doGet(e) {
     if (rowIndex <= 0) throw new Error("Request not found: " + id);
 
     const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
-    const logLink = "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
+    const logLink = "https://docs.google.com/spreadsheets/d/1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0/edit?gid=148482207#gid=148482207";
     const sheetLinkHTML = `<a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>Expedited Shipments Log</b></a>`;
 
     if (action === "approve") {
-      const cost = Number(sheet.getRange(rowIndex, 9).getValue());
+      const cost = Number(sheet.getRange(rowIndex, 12).getValue());
       let title = "";
       let message = "";
       let color = "";
 
       if (level === "1") {
-        sheet.getRange(rowIndex, 10).setValue("Approved");
-        sheet.getRange(rowIndex, 11).setValue(now);
-        //Log planner name
-        const plannerName = Session.getActiveUser().getEmail()|| "Planner";
-        sheet.getRange(rowIndex,20).setValue(plannerName);
-
-        if (cost < 5000) {
-          sheet.getRange(rowIndex, 19).setValue("Planner Approved – Complete");
-          sendCompletionEmail(rowIndex);
-          title = "✅ Request Approved";
-          message = "Planner approved. Request fully approved and processed.";
-          color = "#2ecc71";
-        } else if (cost >= 5000 && cost < 10000) {
-          sheet.getRange(rowIndex, 19).setValue("Planner Approved – Sent to Director 1");
-          sendApprovalEmail(rowIndex, id, cost, 2);
-          title = "🟦 Approval Progressed";
-          message = "Planner approved. Forwarded to <b>Director 1</b> for approval.";
-          color = "#3498db";
-        } else {
-          sheet.getRange(rowIndex, 19).setValue("Planner Approved – Sent to Director 1 & Director 2");
-          sendApprovalEmail(rowIndex, id, cost, 2);
-          title = "🟩 Approval Progressed";
-          message = "Planner approved. Forwarded to <b>Director 1</b> and <b>Director 2</b> for approval.";
-          color = "#27ae60";
-        }
-      }
-
-      else if (level === "2") {
         sheet.getRange(rowIndex, 13).setValue("Approved");
         sheet.getRange(rowIndex, 14).setValue(now);
 
+        const plannerName = Session.getActiveUser().getEmail() || "Manager";
+        sheet.getRange(rowIndex, 23).setValue(plannerName);
+
+        const prodornonprod = sheet.getRange(rowIndex, 5).getValue();
+
+        // === PRODUCTION FLOW ===
+        if (prodornonprod === "Production") {
+          if (cost < 5000) {
+            sheet.getRange(rowIndex, 22).setValue("Planner Approved – Complete");
+            sendCompletionEmail(rowIndex);
+            title = "✅ Request Approved";
+            message = "Planner approved. Request fully approved and processed.";
+            color = "#2ecc71";
+          } else if (cost >= 5000 && cost < 10000) {
+            sheet.getRange(rowIndex, 22).setValue("Planner Approved – Sent to Director 1");
+            sendApprovalEmail(rowIndex, id, cost, 2); // Director 1
+            title = "🟦 Approval Progressed";
+            message = "Planner approved. Forwarded to <b>Director 1</b> for approval.";
+            color = "#27ae60";
+          } else {
+            sheet.getRange(rowIndex, 22).setValue("Planner Approved – Sent to Director 1 and Director 2");
+            sendApprovalEmail(rowIndex, id, cost, 2); // Director 1 first
+            title = "🟦 Approval Progressed";
+            message = "Planner approved. Forwarded to <b>Director 1</b> and Director 2 for approval.";
+            color = "#27ae60";
+          }
+
+        // === NON-PRODUCTION FLOW ===
+        } else if (prodornonprod === "Non-production") {
+          if (cost < 10000) {
+            sheet.getRange(rowIndex, 22).setValue("Non-Production – Sent to Director 1.");
+            sendApprovalEmail(rowIndex, id, cost, 2); // Director 1 directly
+            title = "🟦 Approval Progressed";
+            message = "Non-production request routed directly to <b>Director 1</b> for approval.";
+            color = "#3498db";
+          } else {
+            sheet.getRange(rowIndex, 22).setValue("Non-Production – Sent to Director 1 (then Director 2)");
+            sendApprovalEmail(rowIndex, id, cost, 2); // Director 1 first, then Director 2
+            title = "🟩 Approval Progressed";
+            message = "Non-production request routed to <b>Director 1</b> and Director 2 for approval.";
+            color = "#27ae60";
+          }
+        }
+      }
+
+
+      else if (level === "2") {
+        sheet.getRange(rowIndex, 16).setValue("Approved");
+        sheet.getRange(rowIndex, 17).setValue(now);
+
         if (cost >= 10000) {
-          sheet.getRange(rowIndex, 19).setValue("Director 1 Approved – Sent to Director 2");
-          sendApprovalEmail(rowIndex, id, cost, 3);
+          // After Director 1 approves, forward to Director 2
+          sheet.getRange(rowIndex, 22).setValue("Director 1 Approved – Sent to Director 2");
+          sendApprovalEmail(rowIndex, id, cost, 3); // ✅ Send to Director 2
           title = "🟦 Approval Progressed";
           message = "Director 1 approved. Forwarded to <b>Director 2</b> for final approval.";
           color = "#2980b9";
         } else {
-          sheet.getRange(rowIndex, 19).setValue("Director 1 Approved – Complete");
+          sheet.getRange(rowIndex, 22).setValue("Director 1 Approved – Complete");
           sendCompletionEmail(rowIndex);
           title = "✅ Request Approved";
           message = "Director 1 approved. Request fully approved and processed.";
@@ -288,10 +363,11 @@ function doGet(e) {
         }
       }
 
+
       else if (level === "3") {
-        sheet.getRange(rowIndex, 16).setValue("Approved");
-        sheet.getRange(rowIndex, 17).setValue(now);
-        sheet.getRange(rowIndex, 19).setValue("D2 Approved – Complete");
+        sheet.getRange(rowIndex, 19).setValue("Approved");
+        sheet.getRange(rowIndex, 20).setValue(now);
+        sheet.getRange(rowIndex, 22).setValue("D2 Approved – Complete");
         sendCompletionEmail(rowIndex);
         title = "🏁 Final Approval Complete";
         message = "Director 2 approved. Request fully approved and processed.";
@@ -351,7 +427,7 @@ function doGet(e) {
             <div class="card">
               <h2>${title}</h2>
               <p>${message}</p>
-              <a href="https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178" target="_blank">View in Expedited Shipments Log</a>
+              <a href="https://docs.google.com/spreadsheets/d/1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0/edit?gid=148482207#gid=148482207" target="_blank">View in Expedited Shipments Log</a>
             </div>
           </body>
         </html>
@@ -400,15 +476,15 @@ function doGet(e) {
         level === "2" ? "Director 1" :
         "Director 2";
 
-      const approvalCol = level === "1" ? 10 : level === "2" ? 13 : 16;
-      const timeCol = level === "1" ? 11 : level === "2" ? 14 : 17;
-      const commentCol = level === "1" ? 12 : level === "2" ? 15 : 18;
+      const approvalCol = level === "1" ? 13 : level === "2" ? 16 : 19;
+      const timeCol = level === "1" ? 14 : level === "2" ? 17 : 20;
+      const commentCol = level === "1" ? 15 : level === "2" ? 18 : 21;
       const comment = e.parameter.comment || "No comment provided";
 
       sheet.getRange(rowIndex, approvalCol).setValue("Rejected");
       sheet.getRange(rowIndex, timeCol).setValue(now);
       sheet.getRange(rowIndex, commentCol).setValue(comment);
-      sheet.getRange(rowIndex, 19).setValue("Rejected");
+      sheet.getRange(rowIndex, 22).setValue("Rejected");
 
       // Send notification email
       const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
@@ -481,11 +557,14 @@ function sendCompletionEmail(row) {
   const requesterEmail = sheet.getRange(row, 2).getValue();
   const supplier = sheet.getRange(row, 3).getValue();
   const listPartNumber = sheet.getRange(row, 4).getValue();
-  const transportationMode = sheet.getRange(row, 5).getValue();
-  const needBy = sheet.getRange(row, 6).getValue();
-  const rational = sheet.getRange(row, 7).getValue();
-  const rationalComments = sheet.getRange(row, 8).getValue();
-  const cost = sheet.getRange(row, 9).getValue();
+  const prodornonprod = sheet.getRange(row, 5).getValue();
+  const chargesupplier = sheet.getRange(row, 6).getValue();
+  const transportationMode = sheet.getRange(row, 7).getValue();
+  const needBy = sheet.getRange(row, 8).getValue();
+  const rational = sheet.getRange(row, 9).getValue();
+  const rationalComments = sheet.getRange(row, 10).getValue();
+  const jiraTicket = sheet.getRange(row, 11).getValue();
+  const cost = sheet.getRange(row, 12).getValue();
 
   const formattedCost = Number(cost).toLocaleString("en-US", {
     minimumFractionDigits: 0,
@@ -493,7 +572,7 @@ function sendCompletionEmail(row) {
   });
 
   const logLink =
-    "https://docs.google.com/spreadsheets/d/1faQEyAwGZ5yUysLUCEnCYsPOl7Kjrb1xgg_WJbrT7jI/edit?gid=707913178#gid=707913178";
+    "https://docs.google.com/spreadsheets/d/1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0/edit?gid=148482207#gid=148482207";
 
   const htmlBody = `
     <p style="font-family:Arial; font-size:14px;">✅ The following airfreight request has been <b>fully approved and processed</b>:</p>
@@ -505,12 +584,27 @@ function sendCompletionEmail(row) {
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Request ID</b></td><td style="padding:8px;">${id}</td></tr>
       <tr><td style="padding:8px;"><b>Requester</b></td><td style="padding:8px;">${requesterEmail}</td></tr>
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Supplier</b></td><td style="padding:8px;">${supplier}</td></tr>
+
       <tr><td style="padding:8px;"><b>List of PO, Part Number, Qty</b></td><td style="padding:8px;">${listPartNumber}</td></tr>
+
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Production or Non-production</b></td><td style="padding:8px;">${prodornonprod}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Charge back to supplier?</b></td><td style="padding:8px;">${chargesupplier}</td></tr>
+
       <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Transportation Mode</b></td><td style="padding:8px;">${transportationMode}</td></tr>
+      
+      
       <tr><td style="padding:8px;"><b>Need By</b></td><td style="padding:8px;">${needBy}</td></tr>
-      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Reason</b></td><td style="padding:8px;">${rational}</td></tr>
-      <tr><td style="padding:8px;"><b>Additional Comments</b></td><td style="padding:8px;">${rationalComments}</td></tr>
-      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Freight Cost</b></td><td style="padding:8px;">${formattedCost}</td></tr>
+
+
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Reasoning</b></td><td style="padding:8px;">${rational}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Additional Comments on Reasoning</b></td><td style="padding:8px;">${rationalComments}</td></tr>
+
+      <tr style="background-color:#f9f9f9;"><td style="padding:8px;"><b>Jira Ticket (if applicable)</b></td><td style="padding:8px;">${jiraTicket}</td></tr>
+
+      <tr><td style="padding:8px;"><b>Freight Cost</b></td><td style="padding:8px;">${formattedCost}</td></tr>
+
     </table>
     <br>
 
@@ -577,5 +671,4 @@ function getPlannerEmailFromCSV(csvLink) {
   }
 }
 
-//Columns: Request ID	Requester Email	Supplier	List of PO, Part Number. Quantity	Transportation Mode	Need by Date	Reasoning for Expedited Shipments	Additional Comments On Reasoning	Freight Cost	Planner Approval	Planner Timestamp	Planner's Comment (if reject)	D1 Approval	D1Timestamp	D1's Comment (if reject)	D2 Approval	D2 Timestamp	D2's Comment (if reject)	Overall Status	Planner	Date Submitted 	Charge back to Supplier?
 
