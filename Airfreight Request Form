@@ -63,7 +63,7 @@ function onFormSubmit(e) {
 
 
   sheet.appendRow(row);
-  // 🟨 Highlight Airfreight Cost cell (column L)
+  // 🟨 Highlight Expedited Freight Cost cell (column L)
   const lastRow = sheet.getLastRow();
   const costCell = sheet.getRange(lastRow, 12); // column L
   costCell.setBackground("#FFFF00"); // highlight cost cell
@@ -71,7 +71,7 @@ function onFormSubmit(e) {
   // === Send styled email ===
   const logLink = "https://docs.google.com/spreadsheets/d/1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0/edit?gid=148482207#gid=148482207";
   const htmlBody = `
-    <p style="font-family:Arial; font-size:14px;">A new airfreight request was submitted by <b>${requesterEmail}</b>.</p>
+    <p style="font-family:Arial; font-size:14px;">A new expedited shipment request was submitted by <b>${requesterEmail}</b>.</p>
     <table style="border-collapse:collapse; width:600px; font-family:Arial; font-size:13px; border:1px solid #ccc; border-radius:8px; overflow:hidden;">
       <tr style="background-color:#172d44; color:white; text-align:left;">
         <th style="padding:8px; width:40%;">Field</th>
@@ -95,13 +95,13 @@ function onFormSubmit(e) {
     </table>
     <br>
     <p style="font-family:Arial; font-size:13px;">
-      Please open the <a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>${SHEET_NAME}</b></a> form and enter the Airfreight Cost for request ID <b>${id}</b>.
+      Please open the <a href="${logLink}" style="color:#007bff; text-decoration:none;"><b>${SHEET_NAME}</b></a> form and enter the expedited shipment freight Cost for request ID <b>${id}</b>.
     </p>
   `;
 
   GmailApp.sendEmail(
     MANAGER_EMAIL,
-    `New Airfreight Request ${id} - Cost Input Needed`,
+    `New Expedited Shipment Request ${id} - Cost Input Needed`,
     "",
     { htmlBody: htmlBody }
   );
@@ -117,7 +117,7 @@ function onEdit(e) {
   const col = e.range.getColumn();
   const row = e.range.getRow();
 
-  // Airfreight Cost = column L (12)
+  // Freight Cost = column L (12)
   if (col !== 12) return;
 
   const id = sheet.getRange(row, 1).getValue();
@@ -127,13 +127,16 @@ function onEdit(e) {
   if (cost && cost !== "") {
     // 🟩 Remove highlight once cost is entered
     e.range.setBackground(null);
+    const isProduction = prodornonprod.toLowerCase() === "production";
 
-    if (prodornonprod === "production") {
+    // ✅ LOG isProduction in column Y (column 25)
+    sheet.getRange(row, 25).setValue(isProduction ? "TRUE" : "FALSE");
+
+    if (isProduction) {
       // 🏭 Production flow → send to planner
       sheet.getRange(row, 22).setValue("Cost Added - Awaiting Planner Approval");
-      sendApprovalEmail(row, id, cost, 1);
-
-    } else if (prodornonprod === "non-production") {
+      sendApprovalEmail(row, id, cost, 1); // level 1 → planner
+    } else {
       // 🧾 Non-production flow → skip planner
       if (cost >= 10000) {
         sheet.getRange(row, 22).setValue("Cost Added - Sent to Director 1 (then Director 2)");
@@ -166,6 +169,14 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   let toEmail = "";
   let next = "";
 
+  // 📝 Planner note
+  let plannerNote = "";
+  if (approverLevel === 1) {
+    plannerNote = `<p style="font-family:Arial; font-size:14px; color:#d9534f;">
+      ⚠️ If you are a planner and the parts are classified as <b>Non-production</b>, please click "Approve" so it can be forwarded to the directors.
+    </p>`;
+  }
+
   // 🧠 Skip planner if non-production
   if (approverLevel === 1 && prodornonprod === "production") {
     // send to planner
@@ -184,6 +195,7 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
   else if (approverLevel === 2) { toEmail = DIRECTOR1_EMAIL; next = "Director 1"; }
   else if (approverLevel === 3) { toEmail = DIRECTOR2_EMAIL; next = "Director 2"; }
 
+
   const formattedCost = Number(cost).toLocaleString("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
@@ -197,7 +209,10 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
 
   const htmlBody = `
     <p style="font-family:Arial; font-size:14px;">Dear ${next},</p>
-    <p>Please review the following airfreight request and take appropriate action:</p>
+    
+    ${plannerNote}
+
+    <p>Please review the following expedited shipment request and take appropriate action:</p>
 
     <table style="border-collapse:collapse; width:600px; font-family:Arial; font-size:13px; border:1px solid #ccc; border-radius:8px; overflow:hidden;">
       <tr style="background-color:#172d44; color:white; text-align:left;">
@@ -257,7 +272,7 @@ function sendApprovalEmail(row, id, cost, approverLevel) {
 
   GmailApp.sendEmail(
     toEmail,
-    `Airfreight Request ${id} – Approval Needed (${next})`,
+    `Expedited Shipment Request ${id} – Approval Needed (${next})`,
     "",
     { htmlBody: htmlBody }
   );
@@ -303,10 +318,10 @@ function doGet(e) {
         const plannerName = Session.getActiveUser().getEmail() || "Manager";
         sheet.getRange(rowIndex, 23).setValue(plannerName);
 
-        const prodornonprod = sheet.getRange(rowIndex, 5).getValue();
+        const prodornonprod = sheet.getRange(rowIndex, 5).getValue().toString().trim().toLowerCase();
 
         // === PRODUCTION FLOW ===
-        if (prodornonprod === "Production") {
+        if (prodornonprod === "production") {
           if (cost < 5000) {
             sheet.getRange(rowIndex, 22).setValue("Planner Approved – Complete");
             sendCompletionEmail(rowIndex);
@@ -328,7 +343,7 @@ function doGet(e) {
           }
 
         // === NON-PRODUCTION FLOW ===
-        } else if (prodornonprod === "Non-production") {
+        } else if (prodornonprod === "non-production") {
           if (cost < 10000) {
             sheet.getRange(rowIndex, 22).setValue("Non-Production – Sent to Director 1.");
             sendApprovalEmail(rowIndex, id, cost, 2); // Director 1 directly
@@ -442,7 +457,7 @@ function doGet(e) {
         <html>
           <head><title>Reject Request ${id}</title></head>
           <body style="font-family:Arial; background-color:#f9f9f9; padding:30px;">
-            <h2 style="color:#c0392b;">Reject Airfreight Request ${id}</h2>
+            <h2 style="color:#c0392b;">Reject Expedited Shipment Request ${id}</h2>
             <form id="rejectForm" action="${BASE_URL}" method="GET">
               <input type="hidden" name="action" value="reject">
               <input type="hidden" name="level" value="${level}">
@@ -492,10 +507,10 @@ function doGet(e) {
       // Send notification email
       const requesterEmail = sheet.getRange(rowIndex, 2).getValue();
 
-      const subject = `Airfreight Request ${id} – Rejected by ${reason}`;
+      const subject = `Expedited Shipment Request ${id} – Rejected by ${reason}`;
       const htmlBody = `
         <div style="font-family:Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#333; background:#f9f9f9; padding:25px; border-radius:10px;">
-          <h2 style="color:#c0392b; margin-top:0;">❌ Airfreight Request Rejected</h2>
+          <h2 style="color:#c0392b; margin-top:0;">❌ Expedited Shipment Request Rejected</h2>
           <table style="width:100%; border-collapse:collapse; font-size:15px;">
             <tr>
               <td style="width:180px; font-weight:bold; padding:8px; border-bottom:1px solid #ddd;">Request ID:</td>
@@ -578,7 +593,7 @@ function sendCompletionEmail(row) {
     "https://docs.google.com/spreadsheets/d/1mlSBqK9pVCAfbapFpZtgWJAwuxANDgUTDQd9QpB8JQ0/edit?gid=148482207#gid=148482207";
 
   const htmlBody = `
-    <p style="font-family:Arial; font-size:14px;">✅ The following airfreight request has been <b>fully approved and processed</b>:</p>
+    <p style="font-family:Arial; font-size:14px;">✅ The following expedited shipment request has been <b>fully approved and processed</b>:</p>
     <table style="border-collapse:collapse; width:600px; font-family:Arial; font-size:13px; border:1px solid #ccc; border-radius:8px; overflow:hidden;">
       <tr style="background-color:#172d44; color:white; text-align:left;">
         <th style="padding:8px; width:40%;">Field</th>
@@ -625,7 +640,7 @@ function sendCompletionEmail(row) {
   // 📧 Send to both Requester and Manager
   GmailApp.sendEmail(
     `${requesterEmail}, ${MANAGER_EMAIL}`,
-    `Airfreight Request ${id} – Fully Approved`,
+    `Expedited Shipment Request ${id} – Fully Approved`,
     "",
     { htmlBody: htmlBody }
   );
